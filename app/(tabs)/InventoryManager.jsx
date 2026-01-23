@@ -35,10 +35,14 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
   const animatedDirty = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    const cleanPercent = totalOwned > 0 ? (cleanCount / totalOwned) * 100 : 0;
+    // Ensure totalOwned is the sum of all states
+    const actualTotal = cleanCount + dirtyCount;
+    const total = totalOwned > 0 ? totalOwned : actualTotal;
+    
+    const cleanPercent = total > 0 ? (cleanCount / total) * 100 : 0;
     // Items in laundry are already counted in dirtyCount, so don't add them twice
     const totalDirty = dirtyCount;
-    const dirtyPercent = totalOwned > 0 ? (totalDirty / totalOwned) * 100 : 0;
+    const dirtyPercent = total > 0 ? (totalDirty / total) * 100 : 0;
 
     Animated.parallel([
       Animated.timing(animatedClean, {
@@ -64,6 +68,9 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
     outputRange: ['0%', '100%'],
   });
 
+  // Calculate left position for dirty segment (starts where clean ends)
+  const dirtyLeft = animatedClean;
+
   return (
     <View style={styles.flowBarContainer}>
       <View style={styles.flowBarBackground}>
@@ -78,7 +85,14 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
           style={[
             styles.flowBarSegment,
             styles.flowBarDirty,
-            { width: dirtyWidth },
+            { 
+              width: dirtyWidth,
+              position: 'absolute',
+              left: dirtyLeft.interpolate({
+                inputRange: [0, 100],
+                outputRange: ['0%', '100%'],
+              }),
+            },
           ]}
         />
       </View>
@@ -272,7 +286,7 @@ const RetireModal = ({ visible, onClose, onConfirm, category }) => {
 const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('👕');
-  const [initialCount, setInitialCount] = useState('0');
+  const [initialCount, setInitialCount] = useState('1');
   const scrollViewRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -309,10 +323,10 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
       return;
     }
     hapticFeedback.success();
-    onConfirm(name.trim(), emoji, parseInt(initialCount) || 0);
+    onConfirm(name.trim(), emoji, parseInt(initialCount) || 1);
     setName('');
     setEmoji('👕');
-    setInitialCount('0');
+    setInitialCount('1');
     onClose();
   };
 
@@ -895,6 +909,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     flexDirection: 'row',
     overflow: 'hidden',
+    position: 'relative',
   },
   flowBarSegment: {
     height: '100%',

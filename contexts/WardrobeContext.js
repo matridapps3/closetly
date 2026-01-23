@@ -157,10 +157,35 @@ export const WardrobeProvider = ({ children }) => {
 
   const dispatchLaundry = (bagContents) => {
     markUserChanged();
-    const newBatch = createBatch(`BATCH_${Date.now()}`, bagContents);
+    
+    // Validate and adjust bag contents to ensure we don't dispatch more than available
+    const validatedBagContents = {};
+    let totalValidated = 0;
+    
+    Object.keys(bagContents).forEach(categoryName => {
+      const countInBag = bagContents[categoryName] || 0;
+      if (countInBag === 0) return;
+      
+      const category = categories.find(cat => cat.name === categoryName);
+      if (!category) return;
+      
+      // Only dispatch what's actually available
+      const toDispatch = Math.min(countInBag, category.cleanCount);
+      if (toDispatch > 0) {
+        validatedBagContents[categoryName] = toDispatch;
+        totalValidated += toDispatch;
+      }
+    });
+    
+    if (totalValidated === 0) {
+      // No valid items to dispatch
+      return;
+    }
+    
+    const newBatch = createBatch(`BATCH_${Date.now()}`, validatedBagContents);
     setBatches(prev => [...prev, newBatch]);
     setCategories(prev => {
-      const updated = processBatchDispatch(prev, bagContents);
+      const updated = processBatchDispatch(prev, validatedBagContents);
       // Automatically remove categories with 0 items
       return updated.filter(cat => cat.totalOwned > 0);
     });
@@ -171,11 +196,26 @@ export const WardrobeProvider = ({ children }) => {
 
   const addToBag = (categoryName, count = 1) => {
     markUserChanged();
+    
+    // Find the category to validate available clean items
+    const category = categories.find(cat => cat.name === categoryName);
+    if (!category) return;
+    
+    // Calculate how many items are already in bag for this category
+    const currentInBag = bagContents[categoryName] || 0;
+    // Calculate how many clean items are still available (not in bag yet)
+    // Items stay clean until dispatched, so we check: cleanCount - items already in bag
+    const availableClean = category.cleanCount - currentInBag;
+    
+    // Only add what's available
+    const toAdd = Math.max(0, Math.min(count, availableClean));
+    if (toAdd === 0) return;
+    
     setBagContents((prev) => ({
       ...prev,
-      [categoryName]: (prev[categoryName] || 0) + count,
+      [categoryName]: (prev[categoryName] || 0) + toAdd,
     }));
-    setBagCount((prev) => prev + count);
+    setBagCount((prev) => prev + toAdd);
   };
 
   const clearBag = () => {
@@ -240,13 +280,13 @@ export const WardrobeProvider = ({ children }) => {
     ));
   };
 
-  const addCategory = (name, emoji, initialCount = 0) => {
+  const addCategory = (name, emoji, initialCount = 1) => {
     markUserChanged();
     const newId = String(Date.now());
     const newCategory = createDefaultCategory(newId, name, emoji, initialCount);
     setCategories(prev => {
       const updated = [...prev, newCategory];
-      // Only filter out categories with 0 items if initialCount is 0 (user explicitly created empty category)
+      // Only filter out categories with 0 items if initialCount is explicitly 0 (user created empty category)
       // Otherwise, allow categories to exist even if they have 0 items (user might add items later)
       if (initialCount === 0) {
         return updated.filter(cat => cat.totalOwned > 0);
