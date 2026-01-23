@@ -282,6 +282,11 @@ const VirtualHamper = () => {
 
   const tossItem = (category, gridPosition) => {
     if (category.cleanCount === 0) return;
+    // Check bag capacity before adding
+    if (bagCount >= maxCapacity) {
+      alert(`Bag is full! Maximum capacity is ${maxCapacity} items.`);
+      return;
+    }
 
     hapticFeedback.toss();
 
@@ -308,14 +313,26 @@ const VirtualHamper = () => {
     if (category.cleanCount === 0) return;
 
     const count = category.cleanCount;
+    // Check bag capacity - only add what fits
+    const availableSpace = maxCapacity - bagCount;
+    if (availableSpace <= 0) {
+      alert(`Bag is full! Maximum capacity is ${maxCapacity} items.`);
+      return;
+    }
+
+    const toAdd = Math.min(count, availableSpace);
 
     // Use context function to update categories
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < toAdd; i++) {
       contextTossItem(category.id, 1);
     }
 
     // Update bag contents in context (persists across tab switches)
-    addToBag(category.name, count);
+    addToBag(category.name, toAdd);
+    
+    if (toAdd < count) {
+      alert(`Added ${toAdd} items. Bag is now full (${maxCapacity}/${maxCapacity}). ${count - toAdd} items remaining.`);
+    }
   };
 
   const quickFill = () => {

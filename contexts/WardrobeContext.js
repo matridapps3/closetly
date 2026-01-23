@@ -254,8 +254,12 @@ export const WardrobeProvider = ({ children }) => {
     const newCategory = createDefaultCategory(newId, name, emoji, initialCount);
     setCategories(prev => {
       const updated = [...prev, newCategory];
-      // Automatically remove categories with 0 items (including the one just added if initialCount is 0)
-      return updated.filter(cat => cat.totalOwned > 0);
+      // Only filter out categories with 0 items if initialCount is 0 (user explicitly created empty category)
+      // Otherwise, allow categories to exist even if they have 0 items (user might add items later)
+      if (initialCount === 0) {
+        return updated.filter(cat => cat.totalOwned > 0);
+      }
+      return updated;
     });
   };
 

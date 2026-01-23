@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 // import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { NavigationProvider } from '@/contexts/NavigationContext';
 import { WardrobeProvider } from '@/contexts/WardrobeContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
@@ -18,13 +19,15 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <WardrobeProvider>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          </Stack>
-          <StatusBar style="light" />
-        </WardrobeProvider>
+        <NavigationProvider>
+          <WardrobeProvider>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            </Stack>
+            <StatusBar style="light" />
+          </WardrobeProvider>
+        </NavigationProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

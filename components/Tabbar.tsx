@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, Text, View, Vibration } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigationDirection } from '@/contexts/NavigationContext';
 
 export default function TabBar() {
 
@@ -10,6 +11,11 @@ export default function TabBar() {
     const pathname = usePathname();
     const insets = useSafeAreaInsets();
     const bottomInset = insets.bottom;
+    const { setNavigationDirection } = useNavigationDirection();
+
+    // Define tab order for animation direction
+    const tabOrder = ["Dashboard", "Inventory", "Hamper", "Analytics"];
+    const previousTabRef = useRef<string | null>(null);
 
     const getActiveTab = () => {
       if (pathname?.includes('WardrobeFlowDashboard') || pathname === '/(tabs)/' || pathname === '/(tabs)') {
@@ -31,20 +37,59 @@ export default function TabBar() {
     const currentActive = getActiveTab() || active;
   
   
-    // Navigation handler using if-else
+    // Navigation handler with directional animation
     const handleNavigation = (tab: string) => {
+      // Don't navigate if already on the same tab
+      if (tab === currentActive) {
+        return;
+      }
+
       Vibration.vibrate(10);
 
-      setActive(tab); 
-      if (tab === "Dashboard") {
-        router.push("/(tabs)/WardrobeFlowDashboard");
-      } else if (tab === "Inventory") {
-        router.push("/(tabs)/InventoryManager");
-      } else if (tab === "Hamper") {
-        router.push("/(tabs)/VirtualHamper");
-      } else if (tab === "Analytics") {
-        router.push("/(tabs)/AnalyticsLab");
+      const currentIndex = tabOrder.indexOf(currentActive);
+      const targetIndex = tabOrder.indexOf(tab);
+      
+      // Safety check: if tab not found in order, default to right animation
+      if (currentIndex === -1 || targetIndex === -1) {
+        setNavigationDirection('right');
+        setActive(tab);
+        previousTabRef.current = currentActive;
+        requestAnimationFrame(() => {
+          if (tab === "Dashboard") {
+            router.replace("/(tabs)/WardrobeFlowDashboard");
+          } else if (tab === "Inventory") {
+            router.replace("/(tabs)/InventoryManager");
+          } else if (tab === "Hamper") {
+            router.replace("/(tabs)/VirtualHamper");
+          } else if (tab === "Analytics") {
+            router.replace("/(tabs)/AnalyticsLab");
+          }
+        });
+        return;
       }
+      
+      // Determine direction: going left (lower index) means slide from left
+      const isGoingLeft = targetIndex < currentIndex;
+      
+      // Set navigation direction BEFORE navigation so Stack picks it up
+      setNavigationDirection(isGoingLeft ? 'left' : 'right');
+      
+      setActive(tab);
+      previousTabRef.current = currentActive;
+
+      // Use requestAnimationFrame to ensure direction state update is processed
+      // before navigation triggers
+      requestAnimationFrame(() => {
+        if (tab === "Dashboard") {
+          router.replace("/(tabs)/WardrobeFlowDashboard");
+        } else if (tab === "Inventory") {
+          router.replace("/(tabs)/InventoryManager");
+        } else if (tab === "Hamper") {
+          router.replace("/(tabs)/VirtualHamper");
+        } else if (tab === "Analytics") {
+          router.replace("/(tabs)/AnalyticsLab");
+        }
+      });
     };
 
   return (
