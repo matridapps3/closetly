@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View, Vibration } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabBar() {
@@ -33,6 +33,8 @@ export default function TabBar() {
   
     // Navigation handler using if-else
     const handleNavigation = (tab: string) => {
+      Vibration.vibrate(10);
+
       setActive(tab); 
       if (tab === "Dashboard") {
         router.push("/(tabs)/WardrobeFlowDashboard");

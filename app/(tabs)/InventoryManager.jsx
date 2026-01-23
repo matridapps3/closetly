@@ -1,10 +1,11 @@
 import { useWardrobe } from '@/contexts/WardrobeContext';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   LayoutAnimation,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -29,13 +30,15 @@ const hapticFeedback = {
 };
 
 // Flow Bar Component
-const FlowBar = ({ cleanCount, dirtyCount, totalOwned }) => {
+const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => {
   const animatedClean = useRef(new Animated.Value(0)).current;
   const animatedDirty = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     const cleanPercent = totalOwned > 0 ? (cleanCount / totalOwned) * 100 : 0;
-    const dirtyPercent = totalOwned > 0 ? (dirtyCount / totalOwned) * 100 : 0;
+    // Include items in laundry as part of "dirty" (they're not clean and not available)
+    const totalDirty = dirtyCount + inLaundryCount;
+    const dirtyPercent = totalOwned > 0 ? (totalDirty / totalOwned) * 100 : 0;
 
     Animated.parallel([
       Animated.timing(animatedClean, {
@@ -49,7 +52,7 @@ const FlowBar = ({ cleanCount, dirtyCount, totalOwned }) => {
         useNativeDriver: false,
       }),
     ]).start();
-  }, [cleanCount, dirtyCount, totalOwned]);
+  }, [cleanCount, dirtyCount, inLaundryCount, totalOwned]);
 
   const cleanWidth = animatedClean.interpolate({
     inputRange: [0, 100],
@@ -84,7 +87,10 @@ const FlowBar = ({ cleanCount, dirtyCount, totalOwned }) => {
           <Text style={styles.flowBarLabelClean}>{cleanCount}</Text> clean
         </Text>
         <Text style={styles.flowBarLabel}>
-          <Text style={styles.flowBarLabelDirty}>{dirtyCount}</Text> dirty
+          <Text style={styles.flowBarLabelDirty}>{dirtyCount + inLaundryCount}</Text> dirty
+          {inLaundryCount > 0 && (
+            <Text style={styles.flowBarLabelInLaundry}> ({inLaundryCount} in laundry)</Text>
+          )}
         </Text>
       </View>
     </View>
@@ -262,6 +268,292 @@ const RetireModal = ({ visible, onClose, onConfirm, category }) => {
   );
 };
 
+// Add Category Modal Component
+const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
+  const [name, setName] = useState('');
+  const [emoji, setEmoji] = useState('👕');
+  const [initialCount, setInitialCount] = useState('0');
+  const scrollViewRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const scrollPosition = useRef(0);
+  const maxScrollX = useRef(0);
+  
+  // Each emoji is 50px wide + 8px margin = 58px, scroll 2.5 emojis at a time
+  const SCROLL_STEP = 58 * 2.5; // ~145px
+
+  // Reset scroll state when modal opens
+  useEffect(() => {
+    if (visible) {
+      setCanScrollLeft(false);
+      setCanScrollRight(true);
+      scrollPosition.current = 0;
+      maxScrollX.current = 0;
+      // Reset scroll position after a short delay to ensure layout is complete
+      setTimeout(() => {
+        if (scrollViewRef.current) {
+          scrollViewRef.current.scrollTo({ x: 0, animated: false });
+        }
+      }, 200);
+    }
+  }, [visible]);
+
+  const emojiOptions = [
+    '👕', '👖', '🧦', '👔', '🩲', '🧥', '👗', '👟', 
+    '🧢', '👜', '👠', '👓', '⌚', '🧤', '🧣', '🎩'
+  ];
+
+  const handleConfirm = () => {
+    if (!name.trim()) {
+      hapticFeedback.warning();
+      return;
+    }
+    hapticFeedback.success();
+    onConfirm(name.trim(), emoji, parseInt(initialCount) || 0);
+    setName('');
+    setEmoji('👕');
+    setInitialCount('0');
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>Add New Category</Text>
+
+          <Text style={styles.inputLabel}>CATEGORY NAME</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g., Jackets, Shoes, Accessories"
+            placeholderTextColor="#666666"
+            autoCapitalize="words"
+          />
+
+          <Text style={styles.inputLabel}>EMOJI</Text>
+          <View style={styles.emojiPickerContainer}>
+            <TouchableOpacity
+              style={[styles.emojiArrowButton, styles.emojiArrowLeft, !canScrollLeft && styles.emojiArrowDisabled]}
+              onPress={() => {
+                if (scrollViewRef.current && canScrollLeft) {
+                  const currentX = scrollPosition.current || 0;
+                  const newX = Math.max(0, currentX - SCROLL_STEP);
+                  scrollViewRef.current.scrollTo({ x: newX, animated: true });
+                  hapticFeedback.light();
+                }
+              }}
+              disabled={!canScrollLeft}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.emojiArrowText, !canScrollLeft && styles.emojiArrowTextDisabled]}>◀</Text>
+            </TouchableOpacity>
+            
+            <ScrollView 
+              ref={scrollViewRef}
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              scrollEnabled={true}
+              style={styles.emojiPicker}
+              contentContainerStyle={styles.emojiPickerContent}
+              nestedScrollEnabled={true}
+              bounces={false}
+              onScroll={(event) => {
+                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                const currentX = contentOffset.x;
+                const maxX = Math.max(0, contentSize.width - layoutMeasurement.width);
+                
+                scrollPosition.current = currentX;
+                maxScrollX.current = maxX;
+                
+                const scrollLeft = currentX > 5;
+                const scrollRight = currentX < (maxX - 5);
+                
+                setCanScrollLeft(scrollLeft);
+                setCanScrollRight(scrollRight);
+              }}
+              onContentSizeChange={(contentWidth) => {
+                // Check if content is wider than container and update scroll state
+                if (scrollViewRef.current && contentWidth > 0) {
+                  setTimeout(() => {
+                    scrollViewRef.current?.measure((x, y, width, height, pageX, pageY) => {
+                      const needsScroll = contentWidth > width;
+                      setCanScrollRight(needsScroll);
+                      if (!needsScroll) {
+                        setCanScrollLeft(false);
+                      }
+                    });
+                  }, 50);
+                }
+              }}
+              scrollEventThrottle={16}
+            >
+            {emojiOptions.map((em) => (
+              <TouchableOpacity
+                key={em}
+                style={[
+                  styles.emojiOption,
+                  emoji === em && styles.emojiOptionSelected
+                ]}
+                onPress={() => {
+                  setEmoji(em);
+                  hapticFeedback.light();
+                }}
+              >
+                <Text style={styles.emojiOptionText}>{em}</Text>
+              </TouchableOpacity>
+            ))}
+            </ScrollView>
+            
+            <TouchableOpacity
+              style={[styles.emojiArrowButton, styles.emojiArrowRight, !canScrollRight && styles.emojiArrowDisabled]}
+              onPress={() => {
+                if (scrollViewRef.current && canScrollRight) {
+                  const currentX = scrollPosition.current || 0;
+                  const maxX = maxScrollX.current || 1000;
+                  const newX = Math.min(maxX, currentX + SCROLL_STEP);
+                  scrollViewRef.current.scrollTo({ x: newX, animated: true });
+                  hapticFeedback.light();
+                }
+              }}
+              disabled={!canScrollRight}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.emojiArrowText, !canScrollRight && styles.emojiArrowTextDisabled]}>▶</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.inputLabel}>INITIAL COUNT (Optional)</Text>
+          <TextInput
+            style={styles.input}
+            value={initialCount}
+            onChangeText={setInitialCount}
+            keyboardType="number-pad"
+            placeholder="0"
+            placeholderTextColor="#666666"
+          />
+
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel]}
+              onPress={onClose}
+            >
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.modalButton,
+                styles.modalButtonConfirm,
+                !name.trim() && styles.modalButtonDisabled
+              ]}
+              onPress={handleConfirm}
+              disabled={!name.trim()}
+            >
+              <Text style={styles.modalButtonText}>Add Category</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// Remove Category Modal Component
+const RemoveCategoryModal = ({ visible, onClose, onConfirm, categories }) => {
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+
+  const handleConfirm = () => {
+    if (!selectedCategoryId) {
+      hapticFeedback.warning();
+      return;
+    }
+    hapticFeedback.success();
+    onConfirm(selectedCategoryId);
+    setSelectedCategoryId(null);
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>Remove Category</Text>
+          <Text style={styles.deleteWarningText}>
+            Select a category to remove. This will permanently delete the category and all its items.
+          </Text>
+
+          <ScrollView 
+            style={styles.categorySelectList}
+            showsVerticalScrollIndicator={false}
+          >
+            {categories && categories.length > 0 ? (
+              categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categorySelectItem,
+                    selectedCategoryId === category.id && styles.categorySelectItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedCategoryId(category.id);
+                    hapticFeedback.light();
+                  }}
+                >
+                  <Text style={styles.categorySelectEmoji}>{category.emoji}</Text>
+                  <View style={styles.categorySelectText}>
+                    <Text style={styles.categorySelectName}>{category.name}</Text>
+                    <Text style={styles.categorySelectCount}>
+                      {category.totalOwned} items
+                    </Text>
+                  </View>
+                  {selectedCategoryId === category.id && (
+                    <Text style={styles.categorySelectCheck}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>No categories available</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel]}
+              onPress={onClose}
+            >
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.modalButton,
+                styles.modalButtonDelete,
+                !selectedCategoryId && styles.modalButtonDisabled
+              ]}
+              onPress={handleConfirm}
+              disabled={!selectedCategoryId}
+            >
+              <Text style={styles.modalButtonText}>Remove Category</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 // Category Row Component
 const CategoryRow = ({ category, onUpdate, onPurchase, onRetire }) => {
   const [expanded, setExpanded] = useState(false);
@@ -324,6 +616,7 @@ const CategoryRow = ({ category, onUpdate, onPurchase, onRetire }) => {
       <FlowBar
         cleanCount={category.cleanCount}
         dirtyCount={category.dirtyCount}
+        inLaundryCount={category.inLaundryCount || 0}
         totalOwned={category.totalOwned}
       />
 
@@ -397,7 +690,11 @@ const CategoryRow = ({ category, onUpdate, onPurchase, onRetire }) => {
 // Main Inventory Manager Screen
 const InventoryManager = () => {
   // Get categories and actions from shared context
-  const { categories, acquireItem, retireItem, updateCategoryHibernation } = useWardrobe();
+  const { categories, acquireItem, retireItem, updateCategoryHibernation, addCategory, removeCategory } = useWardrobe();
+  
+  // State for modals
+  const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
+  const [removeCategoryModalVisible, setRemoveCategoryModalVisible] = useState(false);
 
   const updateCategory = (id, updates) => {
     // Handle hibernation toggle - persist in context
@@ -414,6 +711,14 @@ const InventoryManager = () => {
     retireItem(categoryId, quantity, reason);
   };
 
+  const handleAddCategory = (name, emoji, initialCount) => {
+    addCategory(name, emoji, initialCount);
+  };
+
+  const handleRemoveCategory = (categoryId) => {
+    removeCategory(categoryId);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -426,6 +731,50 @@ const InventoryManager = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <Pressable
+          style={({ pressed }) => [
+            styles.addCategoryCard,
+            pressed && styles.addCategoryCardPressed
+          ]}
+          onPress={() => {
+            setAddCategoryModalVisible(true);
+            hapticFeedback.light();
+          }}
+        >
+          <View style={styles.addCategoryContent}>
+            <View style={styles.addCategoryIconContainer}>
+              <Text style={styles.addCategoryIcon}>+</Text>
+            </View>
+            <View style={styles.addCategoryTextContainer}>
+              <Text style={styles.addCategoryTitle}>Add New Category</Text>
+              <Text style={styles.addCategorySubtitle}>Create a new clothing category</Text>
+            </View>
+            <Text style={styles.addCategoryArrow}>▶</Text>
+          </View>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.removeCategoryCard,
+            pressed && styles.removeCategoryCardPressed
+          ]}
+          onPress={() => {
+            setRemoveCategoryModalVisible(true);
+            hapticFeedback.light();
+          }}
+        >
+          <View style={styles.addCategoryContent}>
+            <View style={styles.removeCategoryIconContainer}>
+              <Text style={styles.removeCategoryIcon}>−</Text>
+            </View>
+            <View style={styles.addCategoryTextContainer}>
+              <Text style={styles.addCategoryTitle}>Remove Category</Text>
+              <Text style={styles.addCategorySubtitle}>Delete an existing category</Text>
+            </View>
+            <Text style={styles.addCategoryArrow}>▶</Text>
+          </View>
+        </Pressable>
+
         {categories && categories.length > 0 ? (
           categories.map((category) => (
             <CategoryRow
@@ -442,6 +791,19 @@ const InventoryManager = () => {
           </View>
         )}
       </ScrollView>
+
+      <AddCategoryModal
+        visible={addCategoryModalVisible}
+        onClose={() => setAddCategoryModalVisible(false)}
+        onConfirm={handleAddCategory}
+      />
+
+      <RemoveCategoryModal
+        visible={removeCategoryModalVisible}
+        onClose={() => setRemoveCategoryModalVisible(false)}
+        onConfirm={handleRemoveCategory}
+        categories={categories}
+      />
     </View>
   );
 };
@@ -767,6 +1129,201 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888888',
     textAlign: 'center',
+  },
+  addCategoryCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#2A2A2A'
+  },
+  addCategoryCardPressed: {
+    backgroundColor: '#1A2A3A',
+    borderColor: '#00E5FF',
+    borderStyle: 'solid',
+  },
+  addCategoryContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  addCategoryIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1A3A2A',
+    borderWidth: 2,
+    borderColor: '#00E5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+    alignItems:'center'
+  },
+  addCategoryIcon: {
+    fontSize: 24,
+    color: '#00E5FF',
+    fontWeight: '300',
+    marginBottom: 6
+  },
+  addCategoryTextContainer: {
+    flex: 1,
+  },
+  addCategoryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  addCategorySubtitle: {
+    fontSize: 12,
+    color: '#888888',
+    letterSpacing: 0.5,
+  },
+  addCategoryArrow: {
+    fontSize: 14,
+    color: '#00E5FF',
+    marginLeft: 12,
+  },
+  removeCategoryCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#2A2A2A',
+  },
+  removeCategoryCardPressed: {
+    backgroundColor: '#2A1A1A',
+    borderColor: '#FF5252',
+  },
+  removeCategoryIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#3A1A1A',
+    borderWidth: 2,
+    borderColor: '#FF5252',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  removeCategoryIcon: {
+    fontSize: 24,
+    color: '#FF5252',
+    fontWeight: '300',
+    marginBottom: 6,
+  },
+  categorySelectList: {
+    maxHeight: 200,
+    marginBottom: 20,
+  },
+  categorySelectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2A2A2A',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  categorySelectItemSelected: {
+    backgroundColor: '#2A1A1A',
+    borderColor: '#FF5252',
+  },
+  categorySelectEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  categorySelectText: {
+    flex: 1,
+  },
+  categorySelectName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  categorySelectCount: {
+    fontSize: 12,
+    color: '#888888',
+  },
+  categorySelectCheck: {
+    fontSize: 20,
+    color: '#FF5252',
+    fontWeight: '700',
+  },
+  modalButtonDelete: {
+    backgroundColor: '#FF5252',
+  },
+  deleteWarningText: {
+    fontSize: 14,
+    color: '#AAAAAA',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  emojiPickerContainer: {
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  emojiPicker: {
+    height: 70,
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  emojiPickerContent: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    flexGrow: 0,
+  },
+  emojiArrowButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#2A2A2A',
+    borderWidth: 2,
+    borderColor: '#00E5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiArrowLeft: {
+    marginRight: 0,
+  },
+  emojiArrowRight: {
+    marginLeft: 0,
+  },
+  emojiArrowDisabled: {
+    opacity: 0.3,
+    borderColor: '#666666',
+  },
+  emojiArrowText: {
+    fontSize: 16,
+    color: '#00E5FF',
+    fontWeight: '700',
+  },
+  emojiArrowTextDisabled: {
+    color: '#666666',
+  },
+  emojiOption: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: '#2A2A2A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  emojiOptionSelected: {
+    borderColor: '#00E5FF',
+    backgroundColor: '#1A2A3A',
+  },
+  emojiOptionText: {
+    fontSize: 24,
   },
 });
 

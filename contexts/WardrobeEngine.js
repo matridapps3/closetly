@@ -61,6 +61,12 @@ export class WardrobeAnalyticsEngine {
    * - Laundry consistency
    */
   calculateFlowScore() {
+    // If there's no data (empty state for new users), return 0
+    const activeCategories = this.categories.filter(c => !c.hibernated && c.totalOwned > 0);
+    if (activeCategories.length === 0) {
+      return 0;
+    }
+
     const weights = {
       cleanRatio: 0.35,
       categoryBalance: 0.25,
@@ -83,19 +89,20 @@ export class WardrobeAnalyticsEngine {
   }
 
   _calculateCleanRatioScore() {
-    const activeCategories = this.categories.filter(c => !c.hibernated);
-    if (activeCategories.length === 0) return 100;
+    const activeCategories = this.categories.filter(c => !c.hibernated && c.totalOwned > 0);
+    if (activeCategories.length === 0) return 0;
 
     const totalClean = activeCategories.reduce((sum, c) => sum + c.cleanCount, 0);
     const totalOwned = activeCategories.reduce((sum, c) => sum + c.totalOwned, 0);
     
-    if (totalOwned === 0) return 100;
+    if (totalOwned === 0) return 0;
     return (totalClean / totalOwned) * 100;
   }
 
   _calculateBalanceScore() {
     const activeCategories = this.categories.filter(c => !c.hibernated && c.totalOwned > 0);
-    if (activeCategories.length < 2) return 100;
+    if (activeCategories.length === 0) return 0;
+    if (activeCategories.length < 2) return 100; // Single category is perfectly balanced
 
     const cleanRatios = activeCategories.map(c => c.cleanCount / c.totalOwned);
     const avgRatio = cleanRatios.reduce((a, b) => a + b, 0) / cleanRatios.length;
@@ -107,7 +114,8 @@ export class WardrobeAnalyticsEngine {
   }
 
   _calculateBottleneckPenalty() {
-    const activeCategories = this.categories.filter(c => !c.hibernated);
+    // Only consider categories that actually have items (totalOwned > 0)
+    const activeCategories = this.categories.filter(c => !c.hibernated && c.totalOwned > 0);
     let penalty = 0;
 
     for (const category of activeCategories) {
@@ -115,8 +123,8 @@ export class WardrobeAnalyticsEngine {
         const severity = 1 - (category.cleanCount / category.safetyThreshold);
         penalty += severity * 30;
       }
-      if (category.cleanCount === 0) {
-        penalty += 20; // Extra penalty for stockout
+      if (category.cleanCount === 0 && category.totalOwned > 0) {
+        penalty += 20; // Extra penalty for stockout (only if category has items)
       }
     }
 
@@ -124,7 +132,9 @@ export class WardrobeAnalyticsEngine {
   }
 
   _calculateConsistencyScore() {
-    if (this.laundryHistory.length < 3) return 50; // Neutral score for new users
+    // If no laundry history, return 0 (no data to calculate consistency)
+    if (this.laundryHistory.length === 0) return 0;
+    if (this.laundryHistory.length < 3) return 50; // Neutral score for users with some history but not enough
 
     const intervals = this._calculateLaundryIntervals();
     if (intervals.length < 2) return 50;
@@ -242,15 +252,40 @@ export class WardrobeAnalyticsEngine {
 
   /**
    * Calculate inventory efficiency (active vs. stagnant items)
+   * Active = items currently in use (dirty/in laundry) + items in rotation (clean, recently used)
+   * Stagnant = items not worn recently (dead stock) + items beyond rotation capacity
    */
   calculateInventoryEfficiency() {
+    const deadStockThreshold = 60; // days (same as detectDeadStock)
+    const now = Date.now();
     let activeItems = 0;
     let stagnantItems = 0;
 
-    for (const category of this.categories.filter(c => !c.hibernated)) {
+    for (const category of this.categories.filter(c => !c.hibernated && c.totalOwned > 0)) {
+      // Items currently in use (dirty or in laundry) are definitely active
+      const itemsInUse = category.dirtyCount + category.inLaundryCount;
+      
+      // Check if category has recent usage
+      const lastWorn = category.lastWornDate ? new Date(category.lastWornDate).getTime() : 0;
+      const daysSinceWorn = Math.floor((now - lastWorn) / (1000 * 60 * 60 * 24));
+      const isDeadStock = daysSinceWorn > deadStockThreshold;
+      
+      // Calculate rotation capacity (max items that can be in active rotation)
       const maxInRotation = category.maxBatchSize || Math.ceil(category.totalOwned * 0.4);
-      activeItems += Math.min(maxInRotation, category.totalOwned);
-      stagnantItems += Math.max(0, category.totalOwned - maxInRotation);
+      
+      if (isDeadStock) {
+        // Category hasn't been worn recently - all items are stagnant
+        stagnantItems += category.totalOwned;
+      } else {
+        // Category is in active use
+        // Active items = items in use + clean items up to rotation capacity
+        const cleanInRotation = Math.min(category.cleanCount, Math.max(0, maxInRotation - itemsInUse));
+        const categoryActive = itemsInUse + cleanInRotation;
+        const categoryStagnant = category.totalOwned - categoryActive;
+        
+        activeItems += categoryActive;
+        stagnantItems += Math.max(0, categoryStagnant);
+      }
     }
 
     const total = activeItems + stagnantItems;
@@ -522,17 +557,17 @@ export class WardrobeAnalyticsEngine {
 // ============================================================================
 
 /**
- * Process item toss from clean to dirty
+ * Process item toss - items stay clean until dispatched to laundry
+ * Only updates wear history, doesn't change clean/dirty counts
  */
 export const processItemToss = (categories, categoryId, count = 1) => {
   return categories.map(cat => {
     if (cat.id !== categoryId) return cat;
     
     const toToss = Math.min(count, cat.cleanCount);
+    // Items stay clean when tossed - they only become dirty when dispatched to laundry
     return {
       ...cat,
-      cleanCount: cat.cleanCount - toToss,
-      dirtyCount: cat.dirtyCount + toToss,
       lastWornDate: new Date().toISOString(),
       wearHistory: [
         ...cat.wearHistory,
@@ -543,17 +578,23 @@ export const processItemToss = (categories, categoryId, count = 1) => {
 };
 
 /**
- * Process batch dispatch (dirty items go to laundry)
+ * Process batch dispatch - items become dirty when sent to laundry
  */
 export const processBatchDispatch = (categories, bagContents) => {
   return categories.map(cat => {
     const countInBag = bagContents[cat.name] || 0;
     if (countInBag === 0) return cat;
 
+    // Validate: can't dispatch more than available clean items
+    const toDispatch = Math.min(countInBag, cat.cleanCount);
+    if (toDispatch === 0) return cat;
+
+    // Items become dirty when dispatched to laundry
     return {
       ...cat,
-      dirtyCount: cat.dirtyCount - countInBag,
-      inLaundryCount: cat.inLaundryCount + countInBag,
+      cleanCount: Math.max(0, cat.cleanCount - toDispatch),
+      dirtyCount: cat.dirtyCount + toDispatch,
+      inLaundryCount: cat.inLaundryCount + toDispatch,
     };
   });
 };
@@ -566,9 +607,11 @@ export const processBatchComplete = (categories, batchContents) => {
     const countInBatch = batchContents[cat.name] || 0;
     if (countInBatch === 0) return cat;
 
+    // Items come back clean from laundry, so reduce both inLaundryCount and dirtyCount
     return {
       ...cat,
       inLaundryCount: Math.max(0, cat.inLaundryCount - countInBatch),
+      dirtyCount: Math.max(0, cat.dirtyCount - countInBatch),
       cleanCount: cat.cleanCount + countInBatch,
     };
   });
@@ -598,18 +641,42 @@ export const processItemAcquisition = (categories, categoryId, count = 1, price 
 
 /**
  * Process item retirement (donate/discard)
+ * Retires items from any state (clean, dirty, or in laundry) to maintain data integrity
  */
 export const processItemRetirement = (categories, categoryId, count = 1, reason = 'worn_out') => {
   return categories.map(cat => {
     if (cat.id !== categoryId) return cat;
 
-    const toRetire = Math.min(count, cat.cleanCount);
+    // Retire from totalOwned, prioritizing clean items, then dirty, then in laundry
+    const toRetire = Math.min(count, cat.totalOwned);
     const newTotal = Math.max(0, cat.totalOwned - toRetire);
+    
+    // Calculate how many to retire from each state
+    let remainingToRetire = toRetire;
+    let newCleanCount = cat.cleanCount;
+    let newDirtyCount = cat.dirtyCount;
+    let newInLaundryCount = cat.inLaundryCount;
+    
+    // First retire from clean items
+    const retireFromClean = Math.min(remainingToRetire, newCleanCount);
+    newCleanCount -= retireFromClean;
+    remainingToRetire -= retireFromClean;
+    
+    // Then retire from dirty items
+    const retireFromDirty = Math.min(remainingToRetire, newDirtyCount);
+    newDirtyCount -= retireFromDirty;
+    remainingToRetire -= retireFromDirty;
+    
+    // Finally retire from items in laundry
+    const retireFromLaundry = Math.min(remainingToRetire, newInLaundryCount);
+    newInLaundryCount -= retireFromLaundry;
     
     return {
       ...cat,
       totalOwned: newTotal,
-      cleanCount: cat.cleanCount - toRetire,
+      cleanCount: newCleanCount,
+      dirtyCount: newDirtyCount,
+      inLaundryCount: newInLaundryCount,
       safetyThreshold: Math.ceil(newTotal * 0.2) || 2,
       maxBatchSize: Math.ceil(newTotal * 0.4) || 2,
       retirementHistory: [

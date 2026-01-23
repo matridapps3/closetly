@@ -321,28 +321,23 @@ const VirtualHamper = () => {
   const quickFill = () => {
     hapticFeedback.quickFill();
     
-    // Quick fill with usual batch (2 of each category)
-    const usualBatch = {
-      'T-Shirts': 2,
-      'Socks': 3,
-      'Jeans': 1,
-      'Shirts': 2,
-      'Underwear': 3,
-      'Hoodies': 1,
-    };
-
+    // Quick fill: add 2 items from each category that has clean items available
+    // (or all available if less than 2)
     let totalAdded = 0;
 
     categories.forEach((cat) => {
-      const toAdd = Math.min(usualBatch[cat.name] || 0, cat.cleanCount);
-      if (toAdd > 0) {
-        totalAdded += toAdd;
-        // Use context function to update categories
-        for (let i = 0; i < toAdd; i++) {
-          contextTossItem(cat.id, 1);
+      if (cat.cleanCount > 0 && !cat.hibernated) {
+        const toAdd = Math.min(2, cat.cleanCount);
+        // Also check bag capacity
+        if (bagCount + totalAdded + toAdd <= maxCapacity) {
+          totalAdded += toAdd;
+          // Use context function to update categories
+          for (let i = 0; i < toAdd; i++) {
+            contextTossItem(cat.id, 1);
+          }
+          // Update bag contents in context (persists across tab switches)
+          addToBag(cat.name, toAdd);
         }
-        // Update bag contents in context (persists across tab switches)
-        addToBag(cat.name, toAdd);
       }
     });
   };

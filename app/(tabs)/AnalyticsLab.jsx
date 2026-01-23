@@ -1,5 +1,6 @@
 import { useWardrobe } from '@/contexts/WardrobeContext';
-import React, { useEffect, useRef, useState } from 'react';
+import { WardrobeAnalyticsEngine } from '@/contexts/WardrobeEngine';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -290,88 +291,108 @@ const ProcrastinationChart = ({ cycleData, optimalInterval }) => {
   );
 };
 
-// Cost Per Wear Item Component
-const CostPerWearItem = ({ item }) => {
-  const costPerWear = item.purchasePrice / (item.wearCount + 1);
-  const isEfficient = costPerWear < 100;
-
-  return (
-    <View style={styles.costItem}>
-      <View style={styles.costItemHeader}>
-        <Text style={styles.costItemName}>{item.name}</Text>
-        <Text
-          style={[
-            styles.costItemValue,
-            isEfficient ? styles.costEfficient : styles.costInefficient,
-          ]}
-        >
-          ₹{costPerWear.toFixed(0)}
-        </Text>
-      </View>
-      <View style={styles.costItemDetails}>
-        <Text style={styles.costItemDetail}>
-          Purchase: ₹{item.purchasePrice}
-        </Text>
-        <Text style={styles.costItemDetail}>
-          Wears: {item.wearCount}
-        </Text>
-      </View>
-      <View style={styles.costProgressBar}>
-        <View
-          style={[
-            styles.costProgressFill,
-            {
-              width: `${Math.min((item.wearCount / 50) * 100, 100)}%`,
-              backgroundColor: isEfficient ? '#00E5FF' : '#FF5252',
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-};
+// Cost Per Wear Item Component (DISABLED - Commented out)
+// const CostPerWearItem = ({ item }) => {
+//   const costPerWear = item.purchasePrice / (item.wearCount + 1);
+//   const isEfficient = costPerWear < 100;
+//
+//   return (
+//     <View style={styles.costItem}>
+//       <View style={styles.costItemHeader}>
+//         <Text style={styles.costItemName}>{item.name}</Text>
+//         <Text
+//           style={[
+//             styles.costItemValue,
+//             isEfficient ? styles.costEfficient : styles.costInefficient,
+//           ]}
+//         >
+//           ₹{costPerWear.toFixed(0)}
+//         </Text>
+//       </View>
+//       <View style={styles.costItemDetails}>
+//         <Text style={styles.costItemDetail}>
+//           Purchase: ₹{item.purchasePrice}
+//         </Text>
+//         <Text style={styles.costItemDetail}>
+//           Wears: {item.wearCount}
+//         </Text>
+//       </View>
+//       <View style={styles.costProgressBar}>
+//         <View
+//           style={[
+//             styles.costProgressFill,
+//             {
+//               width: `${Math.min((item.wearCount / 50) * 100, 100)}%`,
+//               backgroundColor: isEfficient ? '#00E5FF' : '#FF5252',
+//             },
+//           ]}
+//         />
+//       </View>
+//     </View>
+//   );
+// };
 
 // Main Analytics Lab Screen
 const AnalyticsLab = () => {
   const [activeTab, setActiveTab] = useState('cycles'); // 'cycles' or 'insights'
-  // Get batches and actions from shared context
-  const { batches, completeBatch } = useWardrobe();
+  // Get data from shared context
+  const { categories, batches, laundryHistory, completeBatch } = useWardrobe();
   
   // Filter only in-progress batches
   const activeBatches = batches.filter(b => b.status === 'in_progress');
 
-  // Sample data for charts
-  const burnDownData = {
-    dates: ['Day 1', 'Day 7', 'Day 14', 'Day 21', 'Day 28'],
-    categories: [
-      {
-        name: 'T-Shirts',
-        values: [20, 15, 10, 5, 18],
-      },
-      {
-        name: 'Socks',
-        values: [15, 12, 8, 3, 14],
-      },
-      {
-        name: 'Jeans',
-        values: [8, 6, 4, 2, 7],
-      },
-    ],
-  };
+  // Create analytics engine instance
+  const engine = useMemo(() => {
+    return new WardrobeAnalyticsEngine(categories, batches, laundryHistory);
+  }, [categories, batches, laundryHistory]);
 
-  const procrastinationData = [7, 12, 6, 14, 8, 9, 11, 7, 13, 8];
-  const optimalInterval = 9;
+  // Calculate real analytics data
+  const burnDownData = useMemo(() => {
+    const activeCategories = categories.filter(c => !c.hibernated && c.totalOwned > 0);
+    if (activeCategories.length === 0) {
+      // Empty state - return placeholder data structure
+      return {
+        dates: ['Day 1', 'Day 7', 'Day 14', 'Day 21', 'Day 28'],
+        categories: [],
+      };
+    }
+    return engine.generateBurnDownData(27); // 28 days (0-27)
+  }, [categories, engine]);
 
-  const costPerWearItems = [
-    { name: 'Navy Jeans', purchasePrice: 3000, wearCount: 60 },
-    { name: 'White T-Shirt', purchasePrice: 500, wearCount: 45 },
-    { name: 'Leather Jacket', purchasePrice: 8000, wearCount: 3 },
-    { name: 'Running Shoes', purchasePrice: 5000, wearCount: 80 },
-  ].sort((a, b) => {
-    const costA = a.purchasePrice / (a.wearCount + 1);
-    const costB = b.purchasePrice / (b.wearCount + 1);
-    return costA - costB;
-  });
+  const inventoryEfficiency = useMemo(() => {
+    return engine.calculateInventoryEfficiency();
+  }, [engine]);
+
+  const laundryCycles = useMemo(() => {
+    return engine.analyzeLaundryCycles();
+  }, [engine]);
+
+  // Prepare procrastination data from laundry intervals
+  const procrastinationData = useMemo(() => {
+    if (laundryCycles.intervals.length === 0) {
+      return [];
+    }
+    // Return last 10 intervals, or pad with zeros if less than 10
+    const intervals = laundryCycles.intervals.slice(-10);
+    // Pad to 10 elements for consistent chart display
+    return intervals.length < 10 
+      ? [...Array(10 - intervals.length).fill(0), ...intervals]
+      : intervals;
+  }, [laundryCycles]);
+
+  const optimalInterval = laundryCycles.optimalInterval || 7;
+
+  // Cost Per Wear Items Data (DISABLED - Commented out)
+  // const costPerWearItems = [
+  //   { name: 'Navy Jeans', purchasePrice: 3000, wearCount: 60 },
+  //   { name: 'White T-Shirt', purchasePrice: 500, wearCount: 45 },
+  //   { name: 'Leather Jacket', purchasePrice: 8000, wearCount: 3 },
+  //   { name: 'Running Shoes', purchasePrice: 5000, wearCount: 80 },
+  // ].sort((a, b) => {
+  //   const costA = a.purchasePrice / (a.wearCount + 1);
+  //   const costB = b.purchasePrice / (b.wearCount + 1);
+  //   return costA - costB;
+  // });
 
   const handleMarkClean = (batch) => {
     // Use context function to complete the batch
@@ -453,16 +474,64 @@ const AnalyticsLab = () => {
           </View>
         ) : (
           <View style={styles.insightsTab}>
-            <BurnDownChart data={burnDownData} />
+            {burnDownData.categories.length > 0 ? (
+              <BurnDownChart data={burnDownData} />
+            ) : (
+              <View style={styles.chartContainer}>
+                <Text style={styles.chartTitle}>BURN DOWN ANALYSIS</Text>
+                <Text style={styles.chartSubtitle}>
+                  Clean stock levels over last 30 days
+                </Text>
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateIcon}>📊</Text>
+                  <Text style={styles.emptyStateText}>No data available</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Add items to your wardrobe to see burn down analysis
+                  </Text>
+                </View>
+              </View>
+            )}
 
-            <DeadStockChart activeCount={42} stagnantCount={28} />
+            {categories.filter(c => !c.hibernated && c.totalOwned > 0).length > 0 ? (
+              <DeadStockChart 
+                activeCount={inventoryEfficiency.activeItems} 
+                stagnantCount={inventoryEfficiency.stagnantItems} 
+              />
+            ) : (
+              <View style={styles.chartContainer}>
+                <Text style={styles.chartTitle}>INVENTORY EFFICIENCY</Text>
+                <Text style={styles.chartSubtitle}>Active vs. Dead Stock</Text>
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateIcon}>📦</Text>
+                  <Text style={styles.emptyStateText}>No inventory data</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Add items to track inventory efficiency
+                  </Text>
+                </View>
+              </View>
+            )}
 
-            <ProcrastinationChart
-              cycleData={procrastinationData}
-              optimalInterval={optimalInterval}
-            />
+            {laundryCycles.intervals.length > 0 ? (
+              <ProcrastinationChart
+                cycleData={procrastinationData}
+                optimalInterval={optimalInterval}
+              />
+            ) : (
+              <View style={styles.chartContainer}>
+                <Text style={styles.chartTitle}>LAUNDRY CONSISTENCY</Text>
+                <Text style={styles.chartSubtitle}>Days between cycles</Text>
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateIcon}>♻️</Text>
+                  <Text style={styles.emptyStateText}>No laundry history</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Complete laundry batches to see consistency analysis
+                  </Text>
+                </View>
+              </View>
+            )}
 
-            <View style={styles.chartContainer}>
+            {/* Cost Per Wear Section (DISABLED - Commented out) */}
+            {/* <View style={styles.chartContainer}>
               <Text style={styles.chartTitle}>COST PER WEAR</Text>
               <Text style={styles.chartSubtitle}>
                 Value efficiency analysis
@@ -471,7 +540,7 @@ const AnalyticsLab = () => {
               {costPerWearItems.map((item, index) => (
                 <CostPerWearItem key={index} item={item} />
               ))}
-            </View>
+            </View> */}
           </View>
         )}
       </ScrollView>
@@ -648,6 +717,12 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginBottom: 16,
   },
+  donutContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
   chart: {
     marginVertical: 8,
     borderRadius: 16,
@@ -677,11 +752,12 @@ const styles = StyleSheet.create({
   donutContainer: {
     position: 'relative',
     alignItems: 'center',
+    justifyContent: 'center'
   },
   donutCenter: {
     position: 'absolute',
-    top: '40%',
-    left: '28%',
+    top: '46%',
+    left: '29%',
     transform: [{ translateX: -40 }, { translateY: -30 }],
     alignItems: 'center',
   },
@@ -692,8 +768,9 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   donutLabel: {
-    fontSize: 10,
-    color: '#888888',
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '800',
     letterSpacing: 1.5,
     marginTop: 2,
   },
@@ -713,53 +790,54 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
     marginTop: 4,
   },
-  costItem: {
-    backgroundColor: '#2A2A2A',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  costItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  costItemName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  costItemValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  costEfficient: {
-    color: '#00E5FF',
-  },
-  costInefficient: {
-    color: '#FF5252',
-  },
-  costItemDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  costItemDetail: {
-    fontSize: 11,
-    color: '#888888',
-  },
-  costProgressBar: {
-    height: 4,
-    backgroundColor: '#1E1E1E',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  costProgressFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
+  // Cost Per Wear Styles (DISABLED - Commented out)
+  // costItem: {
+  //   backgroundColor: '#2A2A2A',
+  //   borderRadius: 8,
+  //   padding: 12,
+  //   marginBottom: 12,
+  // },
+  // costItemHeader: {
+  //   flexDirection: 'row',
+  //   justifyContent: 'space-between',
+  //   alignItems: 'center',
+  //   marginBottom: 8,
+  // },
+  // costItemName: {
+  //   fontSize: 14,
+  //   fontWeight: '600',
+  //   color: '#FFFFFF',
+  // },
+  // costItemValue: {
+  //   fontSize: 18,
+  //   fontWeight: '700',
+  //   fontVariant: ['tabular-nums'],
+  // },
+  // costEfficient: {
+  //   color: '#00E5FF',
+  // },
+  // costInefficient: {
+  //   color: '#FF5252',
+  // },
+  // costItemDetails: {
+  //   flexDirection: 'row',
+  //   justifyContent: 'space-between',
+  //   marginBottom: 8,
+  // },
+  // costItemDetail: {
+  //   fontSize: 11,
+  //   color: '#888888',
+  // },
+  // costProgressBar: {
+  //   height: 4,
+  //   backgroundColor: '#1E1E1E',
+  //   borderRadius: 2,
+  //   overflow: 'hidden',
+  // },
+  // costProgressFill: {
+  //   height: '100%',
+  //   borderRadius: 2,
+  // },
 });
 
 export default AnalyticsLab;
