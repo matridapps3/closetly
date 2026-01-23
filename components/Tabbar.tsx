@@ -1,9 +1,9 @@
+import { useNavigationDirection } from '@/contexts/NavigationContext';
 import { Image } from 'expo-image';
 import { usePathname, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, Text, View, Vibration } from 'react-native';
+import { Pressable, Text, Vibration, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigationDirection } from '@/contexts/NavigationContext';
 
 export default function TabBar() {
 

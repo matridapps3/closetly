@@ -579,6 +579,7 @@ export const processItemToss = (categories, categoryId, count = 1) => {
 
 /**
  * Process batch dispatch - items become dirty when sent to laundry
+ * When items are sent to laundry, they are marked as dirty and in laundry
  */
 export const processBatchDispatch = (categories, bagContents) => {
   return categories.map(cat => {
@@ -590,29 +591,35 @@ export const processBatchDispatch = (categories, bagContents) => {
     if (toDispatch === 0) return cat;
 
     // Items become dirty when dispatched to laundry
+    // They are both dirty (need washing) and in laundry (being washed)
     return {
       ...cat,
       cleanCount: Math.max(0, cat.cleanCount - toDispatch),
-      dirtyCount: cat.dirtyCount + toDispatch,
-      inLaundryCount: cat.inLaundryCount + toDispatch,
+      dirtyCount: cat.dirtyCount + toDispatch, // Mark as dirty
+      inLaundryCount: cat.inLaundryCount + toDispatch, // Mark as in laundry
     };
   });
 };
 
 /**
  * Process batch completion (laundry items become clean)
+ * When laundry completes, items are removed from dirty and become clean
  */
 export const processBatchComplete = (categories, batchContents) => {
   return categories.map(cat => {
     const countInBatch = batchContents[cat.name] || 0;
     if (countInBatch === 0) return cat;
 
-    // Items come back clean from laundry, so reduce both inLaundryCount and dirtyCount
+    // Items come back clean from laundry
+    // Remove from both inLaundryCount and dirtyCount (they're no longer dirty)
+    const newInLaundryCount = Math.max(0, cat.inLaundryCount - countInBatch);
+    const newDirtyCount = Math.max(0, cat.dirtyCount - countInBatch);
+    
     return {
       ...cat,
-      inLaundryCount: Math.max(0, cat.inLaundryCount - countInBatch),
-      dirtyCount: Math.max(0, cat.dirtyCount - countInBatch),
-      cleanCount: cat.cleanCount + countInBatch,
+      inLaundryCount: newInLaundryCount,
+      dirtyCount: newDirtyCount, // Remove from dirty when laundry completes
+      cleanCount: cat.cleanCount + countInBatch, // Items become clean
     };
   });
 };

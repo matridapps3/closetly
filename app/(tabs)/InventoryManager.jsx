@@ -36,8 +36,8 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
 
   React.useEffect(() => {
     const cleanPercent = totalOwned > 0 ? (cleanCount / totalOwned) * 100 : 0;
-    // Include items in laundry as part of "dirty" (they're not clean and not available)
-    const totalDirty = dirtyCount + inLaundryCount;
+    // Items in laundry are already counted in dirtyCount, so don't add them twice
+    const totalDirty = dirtyCount;
     const dirtyPercent = totalOwned > 0 ? (totalDirty / totalOwned) * 100 : 0;
 
     Animated.parallel([
@@ -87,7 +87,7 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
           <Text style={styles.flowBarLabelClean}>{cleanCount}</Text> clean
         </Text>
         <Text style={styles.flowBarLabel}>
-          <Text style={styles.flowBarLabelDirty}>{dirtyCount + inLaundryCount}</Text> dirty
+          <Text style={styles.flowBarLabelDirty}>{dirtyCount}</Text> dirty
           {inLaundryCount > 0 && (
             <Text style={styles.flowBarLabelInLaundry}> ({inLaundryCount} in laundry)</Text>
           )}
@@ -911,7 +911,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   flowBarLabel: {
-    fontSize: 11,
+    fontSize: 14,
     color: '#888888',
     letterSpacing: 0.5,
   },

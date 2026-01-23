@@ -87,26 +87,18 @@ export const WardrobeProvider = ({ children }) => {
           const parsed = JSON.parse(storedBagContents);
           if (parsed && typeof parsed === 'object') {
             setBagContents(parsed);
+            // Recalculate bagCount from bagContents to ensure synchronization
+            const calculatedCount = Object.values(parsed).reduce((sum, count) => sum + (Number(count) || 0), 0);
+            setBagCount(calculatedCount);
           }
+        } else if (storedBagCount) {
+          // If bagContents doesn't exist but bagCount does, reset bagCount to 0
+          // (this shouldn't happen, but ensures consistency)
+          setBagCount(0);
         }
 
-        if (storedBagCount) {
-          const parsed = parseInt(storedBagCount, 10);
-          if (!isNaN(parsed)) {
-            setBagCount(parsed);
-          }
-        }
-
-        // If no existing data, initialize with default category for new users
-        if (!hasExistingData) {
-          const defaultCategory = createDefaultCategory(
-            String(Date.now()),
-            'T-Shirts',
-            '👕',
-            5
-          );
-          setCategories([defaultCategory]);
-        }
+        // New users start with completely empty state (no default categories)
+        // Users can add categories manually when they're ready
       } catch (error) {
         console.error('Error loading data from storage:', error);
       } finally {
