@@ -104,7 +104,12 @@ export class WardrobeAnalyticsEngine {
     if (activeCategories.length === 0) return 0;
     if (activeCategories.length < 2) return 100; // Single category is perfectly balanced
 
-    const cleanRatios = activeCategories.map(c => c.cleanCount / c.totalOwned);
+    // Filter out categories with totalOwned === 0 to avoid division by zero
+    const validCategories = activeCategories.filter(c => c.totalOwned > 0);
+    if (validCategories.length === 0) return 0;
+    if (validCategories.length < 2) return 100;
+
+    const cleanRatios = validCategories.map(c => c.cleanCount / c.totalOwned);
     const avgRatio = cleanRatios.reduce((a, b) => a + b, 0) / cleanRatios.length;
     const variance = cleanRatios.reduce((sum, r) => sum + Math.pow(r - avgRatio, 2), 0) / cleanRatios.length;
     const stdDev = Math.sqrt(variance);
@@ -262,8 +267,9 @@ export class WardrobeAnalyticsEngine {
     let stagnantItems = 0;
 
     for (const category of this.categories.filter(c => !c.hibernated && c.totalOwned > 0)) {
-      // Items currently in use (dirty or in laundry) are definitely active
-      const itemsInUse = category.dirtyCount + category.inLaundryCount;
+      // Items currently in use (dirty items, which includes items in laundry)
+      // Note: inLaundryCount is a subset of dirtyCount, so we only use dirtyCount
+      const itemsInUse = category.dirtyCount;
       
       // Check if category has recent usage
       const lastWorn = category.lastWornDate ? new Date(category.lastWornDate).getTime() : 0;
@@ -386,6 +392,7 @@ export class WardrobeAnalyticsEngine {
 
   /**
    * Generate burn down chart data for visualization
+   * Shows projected clean stock levels over the next N days with actual dates
    */
   generateBurnDownData(daysAhead = 14) {
     const categories = this.categories.filter(c => !c.hibernated).slice(0, 3);
@@ -395,8 +402,18 @@ export class WardrobeAnalyticsEngine {
       values: [],
     }));
 
+    // Generate actual dates starting from today
+    const today = new Date();
+    const formatDate = (date) => {
+      const month = date.toLocaleDateString('en-US', { month: 'short' });
+      const day = date.getDate();
+      return `${month} ${day}`;
+    };
+
     for (let day = 0; day <= daysAhead; day++) {
-      dates.push(`Day ${day + 1}`);
+      const date = new Date(today);
+      date.setDate(today.getDate() + day);
+      dates.push(formatDate(date));
       
       categories.forEach((category, idx) => {
         const dailyConsumption = this._estimateDailyConsumption(category);
@@ -557,17 +574,20 @@ export class WardrobeAnalyticsEngine {
 // ============================================================================
 
 /**
- * Process item toss - items stay clean until dispatched to laundry
- * Only updates wear history, doesn't change clean/dirty counts
+ * Process item toss - items are moved to bag (still clean, but not available in closet)
+ * Decreases cleanCount to reflect items no longer available in closet
+ * Items become dirty only when dispatched to laundry
  */
 export const processItemToss = (categories, categoryId, count = 1) => {
   return categories.map(cat => {
     if (cat.id !== categoryId) return cat;
     
     const toToss = Math.min(count, cat.cleanCount);
-    // Items stay clean when tossed - they only become dirty when dispatched to laundry
+    // Items are moved to bag - decrease cleanCount to reflect they're no longer in closet
+    // They're still "clean" (not dirty) but not available for tossing again
     return {
       ...cat,
+      cleanCount: Math.max(0, cat.cleanCount - toToss),
       lastWornDate: new Date().toISOString(),
       wearHistory: [
         ...cat.wearHistory,
@@ -580,21 +600,29 @@ export const processItemToss = (categories, categoryId, count = 1) => {
 /**
  * Process batch dispatch - items become dirty when sent to laundry
  * When items are sent to laundry, they are marked as dirty and in laundry
+ * Note: Items in bag were already removed from cleanCount when tossed,
+ * so we don't decrease cleanCount again here
  */
 export const processBatchDispatch = (categories, bagContents) => {
   return categories.map(cat => {
     const countInBag = bagContents[cat.name] || 0;
     if (countInBag === 0) return cat;
 
-    // Validate: can't dispatch more than available clean items
-    const toDispatch = Math.min(countInBag, cat.cleanCount);
+    // Items in bag were already removed from cleanCount when tossed
+    // Validate: ensure we don't exceed totalOwned
+    // Items in bag + cleanCount + dirtyCount should equal totalOwned
+    const itemsInBag = countInBag;
+    const currentTotal = cat.cleanCount + cat.dirtyCount;
+    const maxCanDispatch = Math.max(0, cat.totalOwned - currentTotal);
+    const toDispatch = Math.min(itemsInBag, maxCanDispatch);
+    
     if (toDispatch === 0) return cat;
 
     // Items become dirty when dispatched to laundry
     // They are both dirty (need washing) and in laundry (being washed)
+    // cleanCount already decreased when items were tossed, so no change here
     return {
       ...cat,
-      cleanCount: Math.max(0, cat.cleanCount - toDispatch),
       dirtyCount: cat.dirtyCount + toDispatch, // Mark as dirty
       inLaundryCount: cat.inLaundryCount + toDispatch, // Mark as in laundry
     };
@@ -610,16 +638,21 @@ export const processBatchComplete = (categories, batchContents) => {
     const countInBatch = batchContents[cat.name] || 0;
     if (countInBatch === 0) return cat;
 
+    // Validate: can't complete more items than are actually in laundry
+    // This handles edge cases where items were retired while batch was in progress
+    const actualInLaundry = Math.min(countInBatch, cat.inLaundryCount);
+    const actualDirty = Math.min(countInBatch, cat.dirtyCount);
+    
     // Items come back clean from laundry
     // Remove from both inLaundryCount and dirtyCount (they're no longer dirty)
-    const newInLaundryCount = Math.max(0, cat.inLaundryCount - countInBatch);
-    const newDirtyCount = Math.max(0, cat.dirtyCount - countInBatch);
+    const newInLaundryCount = Math.max(0, cat.inLaundryCount - actualInLaundry);
+    const newDirtyCount = Math.max(0, cat.dirtyCount - actualDirty);
     
     return {
       ...cat,
       inLaundryCount: newInLaundryCount,
       dirtyCount: newDirtyCount, // Remove from dirty when laundry completes
-      cleanCount: cat.cleanCount + countInBatch, // Items become clean
+      cleanCount: cat.cleanCount + actualInLaundry, // Items become clean
     };
   });
 };
@@ -649,6 +682,8 @@ export const processItemAcquisition = (categories, categoryId, count = 1, price 
 /**
  * Process item retirement (donate/discard)
  * Retires items from any state (clean, dirty, or in laundry) to maintain data integrity
+ * Note: Items in laundry are counted in both dirtyCount and inLaundryCount, so we must
+ * retire proportionally from both when retiring dirty items.
  */
 export const processItemRetirement = (categories, categoryId, count = 1, reason = 'worn_out') => {
   return categories.map(cat => {
@@ -670,13 +705,23 @@ export const processItemRetirement = (categories, categoryId, count = 1, reason 
     remainingToRetire -= retireFromClean;
     
     // Then retire from dirty items
-    const retireFromDirty = Math.min(remainingToRetire, newDirtyCount);
-    newDirtyCount -= retireFromDirty;
-    remainingToRetire -= retireFromDirty;
+    // IMPORTANT: Items in laundry are a subset of dirty items (counted in both dirtyCount and inLaundryCount)
+    // dirtyCount = dirtyNotInLaundry + inLaundryCount
+    // Strategy: First retire from dirty items NOT in laundry, then from items in laundry
     
-    // Finally retire from items in laundry
+    // Calculate dirty items NOT in laundry
+    const dirtyNotInLaundry = Math.max(0, newDirtyCount - newInLaundryCount);
+    
+    // First retire from dirty items NOT in laundry
+    const retireFromDirtyNotInLaundry = Math.min(remainingToRetire, dirtyNotInLaundry);
+    newDirtyCount -= retireFromDirtyNotInLaundry;
+    remainingToRetire -= retireFromDirtyNotInLaundry;
+    
+    // Then retire from items in laundry (which reduces both dirtyCount and inLaundryCount)
     const retireFromLaundry = Math.min(remainingToRetire, newInLaundryCount);
+    newDirtyCount -= retireFromLaundry;
     newInLaundryCount -= retireFromLaundry;
+    remainingToRetire -= retireFromLaundry;
     
     return {
       ...cat,
@@ -690,6 +735,57 @@ export const processItemRetirement = (categories, categoryId, count = 1, reason 
         ...cat.retirementHistory,
         { date: new Date().toISOString(), count: toRetire, reason },
       ],
+    };
+  });
+};
+
+// ============================================================================
+// DATA CONSISTENCY VALIDATION
+// ============================================================================
+
+/**
+ * Validate and fix data consistency issues in categories
+ * Ensures: totalOwned === cleanCount + dirtyCount
+ *          dirtyCount >= inLaundryCount (items in laundry are subset of dirty)
+ *          All counts are non-negative
+ */
+export const validateAndFixCategoryConsistency = (categories) => {
+  return categories.map(cat => {
+    // Ensure all counts are non-negative
+    let cleanCount = Math.max(0, cat.cleanCount || 0);
+    let dirtyCount = Math.max(0, cat.dirtyCount || 0);
+    let inLaundryCount = Math.max(0, cat.inLaundryCount || 0);
+    let totalOwned = Math.max(0, cat.totalOwned || 0);
+    
+    // Fix: inLaundryCount cannot exceed dirtyCount
+    if (inLaundryCount > dirtyCount) {
+      inLaundryCount = dirtyCount;
+    }
+    
+    // Fix: totalOwned should equal cleanCount + dirtyCount
+    const calculatedTotal = cleanCount + dirtyCount;
+    if (Math.abs(totalOwned - calculatedTotal) > 0.01) {
+      // If there's a mismatch, adjust dirtyCount to match totalOwned
+      // This handles edge cases where data might be inconsistent
+      if (totalOwned > calculatedTotal) {
+        // totalOwned is higher - add difference to dirtyCount
+        dirtyCount = totalOwned - cleanCount;
+      } else {
+        // totalOwned is lower - adjust dirtyCount down
+        dirtyCount = Math.max(0, totalOwned - cleanCount);
+        // Also adjust inLaundryCount if needed
+        if (inLaundryCount > dirtyCount) {
+          inLaundryCount = dirtyCount;
+        }
+      }
+    }
+    
+    return {
+      ...cat,
+      totalOwned,
+      cleanCount,
+      dirtyCount,
+      inLaundryCount,
     };
   });
 };

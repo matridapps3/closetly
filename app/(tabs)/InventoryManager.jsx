@@ -1,6 +1,7 @@
 import { useWardrobe } from '@/contexts/WardrobeContext';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   LayoutAnimation,
   Modal,
@@ -273,7 +274,7 @@ const RetireModal = ({ visible, onClose, onConfirm, category }) => {
               onPress={handleConfirm}
               disabled={!reason}
             >
-              <Text style={styles.modalButtonText}>Confirm Retirement</Text>
+              <Text style={styles.modalButtonText}>Confirm</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -292,13 +293,49 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
   const [canScrollRight, setCanScrollRight] = useState(true);
   const scrollPosition = useRef(0);
   const maxScrollX = useRef(0);
+  const nameManuallyEdited = useRef(false);
   
   // Each emoji is 50px wide + 8px margin = 58px, scroll 2.5 emojis at a time
   const SCROLL_STEP = 58 * 2.5; // ~145px
 
+  const emojiOptions = [
+    '👕', '👖', '🧦', '👔', '🩲', '🧥', '👗', '👟', 
+    '🧢', '👜', '👠', '👓', '⌚', '🧤', '🧣', '🎩'
+  ];
+
+  // Emoji to suggested name mapping
+  const emojiToNameMap = {
+    '👕': 'Shirt',
+    '👖': 'Pant',
+    '🧦': 'Socks',
+    '👔': 'Tie',
+    '🩲': 'Underwear',
+    '🧥': 'Jacket',
+    '👗': 'Dress',
+    '👟': 'Shoes',
+    '🧢': 'Hat',
+    '👜': 'Bag',
+    '👠': 'Heels',
+    '👓': 'Glasses',
+    '⌚': 'Watch',
+    '🧤': 'Gloves',
+    '🧣': 'Scarf',
+    '🎩': 'Formal Hats'
+  };
+
   // Reset scroll state when modal opens
   useEffect(() => {
     if (visible) {
+      // Reset form state
+      const defaultEmoji = '👕';
+      setEmoji(defaultEmoji);
+      setInitialCount('1');
+      nameManuallyEdited.current = false;
+      
+      // Auto-fill name based on default emoji
+      const defaultName = emojiToNameMap[defaultEmoji] || '';
+      setName(defaultName);
+      
       setCanScrollLeft(false);
       setCanScrollRight(true);
       scrollPosition.current = 0;
@@ -311,11 +348,6 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
       }, 200);
     }
   }, [visible]);
-
-  const emojiOptions = [
-    '👕', '👖', '🧦', '👔', '🩲', '🧥', '👗', '👟', 
-    '🧢', '👜', '👠', '👓', '⌚', '🧤', '🧣', '🎩'
-  ];
 
   const handleConfirm = () => {
     if (!name.trim()) {
@@ -345,7 +377,10 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
           <TextInput
             style={styles.input}
             value={name}
-            onChangeText={setName}
+            onChangeText={(text) => {
+              setName(text);
+              nameManuallyEdited.current = true; // Mark as manually edited
+            }}
             placeholder="e.g., Jackets, Shoes, Accessories"
             placeholderTextColor="#666666"
             autoCapitalize="words"
@@ -417,6 +452,14 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
                 ]}
                 onPress={() => {
                   setEmoji(em);
+                  // Auto-fill name if it hasn't been manually edited or is empty
+                  if (!nameManuallyEdited.current || !name.trim()) {
+                    const suggestedName = emojiToNameMap[em] || '';
+                    if (suggestedName) {
+                      setName(suggestedName);
+                      nameManuallyEdited.current = false; // Reset flag since it's auto-filled
+                    }
+                  }
                   hapticFeedback.light();
                 }}
               >
@@ -559,7 +602,7 @@ const RemoveCategoryModal = ({ visible, onClose, onConfirm, categories }) => {
               onPress={handleConfirm}
               disabled={!selectedCategoryId}
             >
-              <Text style={styles.modalButtonText}>Remove Category</Text>
+              <Text style={styles.modalButtonText}>Remove</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -726,6 +769,21 @@ const InventoryManager = () => {
   };
 
   const handleAddCategory = (name, emoji, initialCount) => {
+    // Check if category with same name already exists (case-insensitive)
+    const categoryExists = (categories || []).some(
+      cat => cat && cat.name && cat.name.toLowerCase().trim() === name.toLowerCase().trim()
+    );
+    
+    if (categoryExists) {
+      hapticFeedback.warning();
+      Alert.alert(
+        'Category Already Exists',
+        'A category with this name already exists. Please choose a different name.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
     addCategory(name, emoji, initialCount);
   };
 

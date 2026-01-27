@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function Navbar(){
@@ -21,6 +21,7 @@ export default function Navbar(){
                 alignItems: 'center',
                 justifyContent: 'space-between',
             }}>
+                
                 <Text style={{ 
                     color: '#FFFFFF', 
                     fontSize: 19, 
@@ -32,6 +33,8 @@ export default function Navbar(){
                 }}>
                     WardrobeFlow
                 </Text>
+
+                <Image source={require('../assets/images/navbarImage.png')} style={{ width: 32, height: 32 }} />
             </View>
         </View>
     )

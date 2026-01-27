@@ -52,13 +52,17 @@ const ActiveBatchCard = ({ batch, onMarkClean }) => {
     });
   };
 
-  const daysAgo = Math.floor(
-    (Date.now() - new Date(batch.timestamp).getTime()) / (1000 * 60 * 60 * 24)
-  );
+  const batchTimestamp = batch.timestamp || batch.createdAt || Date.now();
+  const timestampDate = new Date(batchTimestamp);
+  const daysAgo = isNaN(timestampDate.getTime()) 
+    ? 0 
+    : Math.floor((Date.now() - timestampDate.getTime()) / (1000 * 60 * 60 * 24));
 
-  const itemsList = Object.entries(batch.contents)
+  const batchContents = batch.contents || {};
+  const itemsList = Object.entries(batchContents)
+    .filter(([_, count]) => count > 0)
     .map(([name, count]) => `${count} ${name}`)
-    .join(', ');
+    .join(', ') || 'No items';
 
   return (
     <Animated.View
@@ -72,13 +76,13 @@ const ActiveBatchCard = ({ batch, onMarkClean }) => {
     >
       <View style={styles.batchHeader}>
         <View>
-          <Text style={styles.batchId}>Batch #{batch.id}</Text>
+          <Text style={styles.batchId}>Batch #{batch.id || 'Unknown'}</Text>
           <Text style={styles.batchTime}>
             Sent {daysAgo} {daysAgo === 1 ? 'day' : 'days'} ago
           </Text>
         </View>
         <View style={styles.batchCountBadge}>
-          <Text style={styles.batchCountText}>{batch.totalItems}</Text>
+          <Text style={styles.batchCountText}>{batch.totalItems || Object.values(batchContents).reduce((sum, count) => sum + (Number(count) || 0), 0)}</Text>
           <Text style={styles.batchCountLabel}>items</Text>
         </View>
       </View>
@@ -339,7 +343,7 @@ const AnalyticsLab = () => {
   const { categories, batches, laundryHistory, completeBatch } = useWardrobe();
   
   // Filter only in-progress batches
-  const activeBatches = batches.filter(b => b.status === 'in_progress');
+  const activeBatches = (batches || []).filter(b => b && b.status === 'in_progress');
 
   // Create analytics engine instance
   const engine = useMemo(() => {
@@ -348,11 +352,23 @@ const AnalyticsLab = () => {
 
   // Calculate real analytics data
   const burnDownData = useMemo(() => {
-    const activeCategories = categories.filter(c => !c.hibernated && c.totalOwned > 0);
+    const activeCategories = (categories || []).filter(c => c && !c.hibernated && c.totalOwned > 0);
     if (activeCategories.length === 0) {
-      // Empty state - return placeholder data structure
+      // Empty state - return placeholder data structure with actual dates
+      const today = new Date();
+      const formatDate = (date) => {
+        const month = date.toLocaleDateString('en-US', { month: 'short' });
+        const day = date.getDate();
+        return `${month} ${day}`;
+      };
+      const placeholderDates = [];
+      for (let i = 0; i < 5; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i * 7);
+        placeholderDates.push(formatDate(date));
+      }
       return {
-        dates: ['Day 1', 'Day 7', 'Day 14', 'Day 21', 'Day 28'],
+        dates: placeholderDates,
         categories: [],
       };
     }
@@ -396,7 +412,9 @@ const AnalyticsLab = () => {
 
   const handleMarkClean = (batch) => {
     // Use context function to complete the batch
-    completeBatch(batch.id);
+    if (batch && batch.id) {
+      completeBatch(batch.id);
+    }
   };
 
   const switchTab = (tab) => {
@@ -492,7 +510,7 @@ const AnalyticsLab = () => {
               </View>
             )}
 
-            {categories.filter(c => !c.hibernated && c.totalOwned > 0).length > 0 ? (
+            {(categories || []).filter(c => c && !c.hibernated && c.totalOwned > 0).length > 0 ? (
               <DeadStockChart 
                 activeCount={inventoryEfficiency.activeItems} 
                 stagnantCount={inventoryEfficiency.stagnantItems} 

@@ -8,6 +8,7 @@ import {
   processItemAcquisition,
   processItemRetirement,
   processItemToss,
+  validateAndFixCategoryConsistency,
   WardrobeAnalyticsEngine
 } from './WardrobeEngine';
 
@@ -63,33 +64,57 @@ export const WardrobeProvider = ({ children }) => {
         }
 
         if (storedCategories) {
-          const parsed = JSON.parse(storedCategories);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setCategories(parsed);
+          try {
+            const parsed = JSON.parse(storedCategories);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              // Validate and fix data consistency issues
+              const validatedCategories = validateAndFixCategoryConsistency(parsed);
+              setCategories(validatedCategories);
+            }
+          } catch (error) {
+            console.error('Error parsing stored categories:', error);
+            // Continue loading other data even if categories fail
           }
         }
 
         if (storedBatches) {
-          const parsed = JSON.parse(storedBatches);
-          if (Array.isArray(parsed)) {
-            setBatches(parsed);
+          try {
+            const parsed = JSON.parse(storedBatches);
+            if (Array.isArray(parsed)) {
+              setBatches(parsed);
+            }
+          } catch (error) {
+            console.error('Error parsing stored batches:', error);
+            // Continue loading other data even if batches fail
           }
         }
 
         if (storedLaundryHistory) {
-          const parsed = JSON.parse(storedLaundryHistory);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setLaundryHistory(parsed);
+          try {
+            const parsed = JSON.parse(storedLaundryHistory);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setLaundryHistory(parsed);
+            }
+          } catch (error) {
+            console.error('Error parsing stored laundry history:', error);
+            // Continue loading other data even if history fails
           }
         }
 
         if (storedBagContents) {
-          const parsed = JSON.parse(storedBagContents);
-          if (parsed && typeof parsed === 'object') {
-            setBagContents(parsed);
-            // Recalculate bagCount from bagContents to ensure synchronization
-            const calculatedCount = Object.values(parsed).reduce((sum, count) => sum + (Number(count) || 0), 0);
-            setBagCount(calculatedCount);
+          try {
+            const parsed = JSON.parse(storedBagContents);
+            if (parsed && typeof parsed === 'object') {
+              // Clean up orphaned bag contents (categories that no longer exist)
+              // This will be done after categories are loaded, so we'll handle it in a separate effect
+              setBagContents(parsed);
+              // Recalculate bagCount from bagContents to ensure synchronization
+              const calculatedCount = Object.values(parsed).reduce((sum, count) => sum + (Number(count) || 0), 0);
+              setBagCount(calculatedCount);
+            }
+          } catch (error) {
+            console.error('Error parsing stored bag contents:', error);
+            // Continue loading other data even if bag contents fail
           }
         } else if (storedBagCount) {
           // If bagContents doesn't exist but bagCount does, reset bagCount to 0
@@ -108,6 +133,29 @@ export const WardrobeProvider = ({ children }) => {
 
     loadData();
   }, []);
+
+  // Clean up orphaned bag contents when categories change
+  useEffect(() => {
+    if (isLoading) return;
+    
+    // Remove bag contents for categories that no longer exist
+    const categoryNames = new Set(categories.map(cat => cat.name));
+    const cleanedBagContents = {};
+    let cleanedBagCount = 0;
+    
+    Object.keys(bagContents).forEach(categoryName => {
+      if (categoryNames.has(categoryName)) {
+        cleanedBagContents[categoryName] = bagContents[categoryName];
+        cleanedBagCount += bagContents[categoryName] || 0;
+      }
+    });
+    
+    // Only update if there were orphaned items
+    if (Object.keys(cleanedBagContents).length !== Object.keys(bagContents).length) {
+      setBagContents(cleanedBagContents);
+      setBagCount(cleanedBagCount);
+    }
+  }, [categories, isLoading]);
 
   // Save data to storage whenever it changes (but only after user has made changes)
   useEffect(() => {
@@ -158,7 +206,9 @@ export const WardrobeProvider = ({ children }) => {
   const dispatchLaundry = (bagContents) => {
     markUserChanged();
     
-    // Validate and adjust bag contents to ensure we don't dispatch more than available
+    // Validate and adjust bag contents
+    // Note: Items in bag were already removed from cleanCount when tossed,
+    // so we can dispatch all items in bag (they're already accounted for)
     const validatedBagContents = {};
     let totalValidated = 0;
     
@@ -169,8 +219,9 @@ export const WardrobeProvider = ({ children }) => {
       const category = categories.find(cat => cat.name === categoryName);
       if (!category) return;
       
-      // Only dispatch what's actually available
-      const toDispatch = Math.min(countInBag, category.cleanCount);
+      // Items in bag are already removed from cleanCount, so we can dispatch them
+      // Just validate that we don't exceed totalOwned
+      const toDispatch = Math.min(countInBag, category.totalOwned);
       if (toDispatch > 0) {
         validatedBagContents[categoryName] = toDispatch;
         totalValidated += toDispatch;
@@ -201,11 +252,9 @@ export const WardrobeProvider = ({ children }) => {
     const category = categories.find(cat => cat.name === categoryName);
     if (!category) return;
     
-    // Calculate how many items are already in bag for this category
-    const currentInBag = bagContents[categoryName] || 0;
-    // Calculate how many clean items are still available (not in bag yet)
-    // Items stay clean until dispatched, so we check: cleanCount - items already in bag
-    const availableClean = category.cleanCount - currentInBag;
+    // cleanCount already reflects items available in closet (items in bag are already removed)
+    // So we can directly use cleanCount to check availability
+    const availableClean = category.cleanCount;
     
     // Only add what's available
     const toAdd = Math.max(0, Math.min(count, availableClean));
@@ -297,7 +346,20 @@ export const WardrobeProvider = ({ children }) => {
 
   const removeCategory = (categoryId) => {
     markUserChanged();
+    const categoryToRemove = categories.find(cat => cat.id === categoryId);
+    
     setCategories(prev => prev.filter(cat => cat.id !== categoryId));
+    
+    // Clean up bag contents if this category had items in bag
+    if (categoryToRemove && bagContents[categoryToRemove.name]) {
+      const itemsInBag = bagContents[categoryToRemove.name] || 0;
+      setBagContents(prev => {
+        const updated = { ...prev };
+        delete updated[categoryToRemove.name];
+        return updated;
+      });
+      setBagCount(prev => Math.max(0, prev - itemsInBag));
+    }
   };
 
   // Don't render children until data is loaded
