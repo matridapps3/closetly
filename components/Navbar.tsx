@@ -8,7 +8,7 @@ export default function Navbar(){
     return(
         <View style={{ 
             width: '100%', 
-            paddingTop: topInset + 8,
+            paddingTop: topInset + 10,
             paddingBottom: 16,
             backgroundColor: '#000000', 
             borderBottomWidth: 2, 
