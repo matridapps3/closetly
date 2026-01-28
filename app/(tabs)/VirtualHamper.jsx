@@ -211,6 +211,15 @@ const CategoryButton = ({
   const [isLongPressing, setIsLongPressing] = useState(false);
   const longPressTimer = useRef(null);
 
+  // Cleanup timer on unmount
+  React.useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    };
+  }, []);
+
   const handlePressIn = () => {
     longPressTimer.current = setTimeout(() => {
       setIsLongPressing(true);
@@ -223,6 +232,7 @@ const CategoryButton = ({
   const handlePressOut = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
     setIsLongPressing(false);
   };
@@ -281,7 +291,7 @@ const VirtualHamper = () => {
   const gridRefs = useRef({});
 
   const tossItem = (category, gridPosition) => {
-    if (category.cleanCount === 0) return;
+    if (!category || category.cleanCount === 0) return;
     // Check bag capacity before adding
     if (bagCount >= maxCapacity) {
       alert(`Bag is full! Maximum capacity is ${maxCapacity} items.`);
@@ -290,10 +300,12 @@ const VirtualHamper = () => {
 
     hapticFeedback.toss();
 
-    // Use context function to update categories
+    // Use context function to update categories first
+    // This marks items as dirty when tossed to hamper
     contextTossItem(category.id, 1);
 
     // Update bag contents in context (persists across tab switches)
+    // Items in bag are dirty items waiting to be sent to laundry
     addToBag(category.name, 1);
 
     // Create flying animation
@@ -310,7 +322,7 @@ const VirtualHamper = () => {
   };
 
   const dumpAll = (category) => {
-    if (category.cleanCount === 0) return;
+    if (!category || category.cleanCount === 0) return;
 
     const count = category.cleanCount;
     // Check bag capacity - only add what fits
@@ -322,10 +334,8 @@ const VirtualHamper = () => {
 
     const toAdd = Math.min(count, availableSpace);
 
-    // Use context function to update categories
-    for (let i = 0; i < toAdd; i++) {
-      contextTossItem(category.id, 1);
-    }
+    // Use context function to update categories - batch update with total count
+    contextTossItem(category.id, toAdd);
 
     // Update bag contents in context (persists across tab switches)
     addToBag(category.name, toAdd);
@@ -340,22 +350,27 @@ const VirtualHamper = () => {
     
     // Quick fill: add 2 items from each category that has clean items available
     // (or all available if less than 2)
+    // Note: We need to track what we're adding to avoid exceeding capacity
+    // since bagCount will update as we add items, but we're reading it at the start
+    const currentBagCount = bagCount;
     let totalAdded = 0;
+    const itemsToAdd = []; // Track items to add, then add them all
 
-    categories.forEach((cat) => {
-      if (cat.cleanCount > 0 && !cat.hibernated) {
-        const toAdd = Math.min(2, cat.cleanCount);
-        // Also check bag capacity
-        if (bagCount + totalAdded + toAdd <= maxCapacity) {
+    (categories || []).forEach((cat) => {
+      if (cat && cat.cleanCount > 0 && !cat.hibernated) {
+        const toAdd = Math.min(2, cat.cleanCount || 0);
+        // Check bag capacity using current bag count + what we've planned to add
+        if (currentBagCount + totalAdded + toAdd <= maxCapacity) {
           totalAdded += toAdd;
-          // Use context function to update categories
-          for (let i = 0; i < toAdd; i++) {
-            contextTossItem(cat.id, 1);
-          }
-          // Update bag contents in context (persists across tab switches)
-          addToBag(cat.name, toAdd);
+          itemsToAdd.push({ categoryId: cat.id, categoryName: cat.name, count: toAdd });
         }
       }
+    });
+
+    // Now add all items (this ensures we don't exceed capacity)
+    itemsToAdd.forEach(({ categoryId, categoryName, count }) => {
+      contextTossItem(categoryId, count);
+      addToBag(categoryName, count);
     });
   };
 
@@ -400,7 +415,7 @@ const VirtualHamper = () => {
             Tap to toss • Hold to dump all
           </Text>
 
-          <View style={styles.categoryGrid}>
+          <View style={[styles.categoryGrid, categories && categories.length === 0 && styles.categoryGridEmpty]}>
             {categories && categories.length > 0 ? (
               categories.map((category, index) => (
                 <View
@@ -461,7 +476,7 @@ const VirtualHamper = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#000000',
   },
   scrollView: {
     flex: 1,
@@ -639,6 +654,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
+  categoryGridEmpty: {
+    justifyContent: 'center',
+  },
   categoryButton: {
     width: width < 400 ? (width - 48) / 2 : (width - 52) / 2, // 20 padding each side + 8 gap on small, 12 gap on larger
     maxWidth: width < 400 ? 160 : 180,
@@ -715,6 +733,7 @@ const styles = StyleSheet.create({
     padding: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
   emptyStateText: {
     fontSize: 14,

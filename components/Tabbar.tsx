@@ -93,20 +93,20 @@ export default function TabBar() {
     };
 
   return (
-    <View style={{paddingBottom: bottomInset, paddingLeft: 10, paddingRight: 10, height: 90 + bottomInset, backgroundColor: '#000000', borderTopWidth: 2, borderTopColor:'grey', borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, flexDirection:'row', justifyContent:'space-around', alignItems:'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, elevation: 4, overflow: 'hidden'}}>
-      <Pressable onPress={() => handleNavigation("Dashboard")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Dashboard" ? 'rgba(0, 229, 255, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
+    <View style={{paddingBottom: bottomInset, paddingLeft: 10, paddingRight: 10, height: 90 + bottomInset, backgroundColor: '#161616', borderTopWidth: 1, borderTopColor:'#303030', borderTopLeftRadius: 16, borderTopRightRadius: 16, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, flexDirection:'row', justifyContent:'space-around', alignItems:'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, elevation: 4, overflow: 'hidden'}}>
+      <Pressable onPress={() => handleNavigation("Dashboard")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Dashboard" ? 'rgba(2, 208, 231, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
         <Image source={require('@/assets/images/dashboard.png')} style={{width: 26, height: 26}} />
         <Text style={{fontSize: 12, color: currentActive === "Dashboard" ? '#F3F3F3' : '#F3F3F3', fontWeight: currentActive === "Dashboard" ? '600' : '500', letterSpacing: 0.3}}>Dashboard</Text>
       </Pressable>
-      <Pressable onPress={() => handleNavigation("Inventory")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Inventory" ? 'rgba(0, 229, 255, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
+      <Pressable onPress={() => handleNavigation("Inventory")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Inventory" ? 'rgba(2, 208, 231, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
         <Image source={require('@/assets/images/inventory.png')} style={{width: 26, height: 26}} />
         <Text style={{fontSize: 12, color: currentActive === "Inventory" ? '#F3F3F3' : '#F3F3F3', fontWeight: currentActive === "Inventory" ? '600' : '500', letterSpacing: 0.3}}>Inventory</Text>
       </Pressable>
-      <Pressable onPress={() => handleNavigation("Hamper")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Hamper" ? 'rgba(0, 229, 255, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
+      <Pressable onPress={() => handleNavigation("Hamper")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Hamper" ? 'rgba(2, 208, 231, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
         <Image source={require('@/assets/images/hamper.png')} style={{width: 26, height: 26}} />
         <Text style={{fontSize: 12, color: currentActive === "Hamper" ? '#F3F3F3' : '#F3F3F3', fontWeight: currentActive === "Hamper" ? '600' : '500', letterSpacing: 0.3}}>Hamper</Text>
       </Pressable>
-      <Pressable onPress={() => handleNavigation("Analytics")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Analytics" ? 'rgba(0, 229, 255, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
+      <Pressable onPress={() => handleNavigation("Analytics")} style={({ pressed }) => ({ position:'relative', borderRadius: 8, backgroundColor: currentActive === "Analytics" ? 'rgba(2, 208, 231, 0.25)' : pressed ? 'rgba(255, 255, 255, 0.05)' : 'transparent', minWidth: 80, alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 })}>
         <Image source={require('@/assets/images/analytics.png')} style={{width: 26, height: 26}} />
         <Text style={{fontSize: 12, color: currentActive === "Analytics" ? '#F3F3F3' : '#F3F3F3', fontWeight: currentActive === "Analytics" ? '600' : '500', letterSpacing: 0.3}}>Analytics</Text>
       </Pressable>

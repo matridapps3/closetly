@@ -1,4 +1,4 @@
-import { Image, Text, View } from 'react-native';
+import { Image, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function Navbar(){
@@ -9,12 +9,17 @@ export default function Navbar(){
         <View style={{ 
             width: '100%', 
             paddingTop: topInset + 10,
-            paddingBottom: 16,
-            backgroundColor: '#000000', 
-            borderBottomWidth: 2, 
-            borderBottomColor: 'rgba(107, 107, 107, 0.67)', 
-            paddingLeft: 20, 
-            paddingRight: 20,
+            paddingBottom: 14,
+            backgroundColor: '#000000',
+            borderBottomWidth: 2,
+            borderBottomColor: '#303030',
+            paddingHorizontal: 20,
+            justifyContent: 'center',
+            shadowColor: '#000000',
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 8,
         }}>
             <View style={{
                 flexDirection: 'row',
@@ -22,19 +27,17 @@ export default function Navbar(){
                 justifyContent: 'space-between',
             }}>
                 
-                <Text style={{ 
-                    color: '#FFFFFF', 
-                    fontSize: 19, 
-                    fontWeight: '700',
-                    letterSpacing: 0.5,
-                    textShadowColor: 'rgba(0, 229, 255, 0.3)',
-                    textShadowOffset: { width: 0, height: 1 },
-                    textShadowRadius: 4,
-                }}>
-                    WardrobeFlow
-                </Text>
+                <Image
+                  source={require('../assets/images/textlogo.png')}
+                  style={{ width: 110, height: 22 }}
+                  resizeMode="contain"
+                />
 
-                <Image source={require('../assets/images/navbarImage.png')} style={{ width: 32, height: 32 }} />
+                <Image
+                  source={require('../assets/images/favicon.png')}
+                  style={{ width: 23, height: 23, marginRight: 2 }}
+                  resizeMode="contain"
+                />
             </View>
         </View>
     )

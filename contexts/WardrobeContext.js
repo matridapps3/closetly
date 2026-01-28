@@ -36,12 +36,17 @@ export const WardrobeProvider = ({ children }) => {
   const [bagCount, setBagCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const batchesRef = useRef(batches);
+  const categoriesRef = useRef([]);
   const hasUserMadeChanges = useRef(false); // Track if user has made any changes
   
-  // Keep ref in sync with state
+  // Keep refs in sync with state
   useEffect(() => {
     batchesRef.current = batches;
   }, [batches]);
+  
+  useEffect(() => {
+    categoriesRef.current = categories;
+  }, [categories]);
 
   // Load data from storage on mount
   useEffect(() => {
@@ -137,24 +142,30 @@ export const WardrobeProvider = ({ children }) => {
   // Clean up orphaned bag contents when categories change
   useEffect(() => {
     if (isLoading) return;
+    if (!categories || !Array.isArray(categories)) return;
+    if (!bagContents || typeof bagContents !== 'object') return;
     
     // Remove bag contents for categories that no longer exist
-    const categoryNames = new Set(categories.map(cat => cat.name));
+    const categoryNames = new Set(categories.map(cat => cat && cat.name ? cat.name : null).filter(Boolean));
     const cleanedBagContents = {};
     let cleanedBagCount = 0;
     
     Object.keys(bagContents).forEach(categoryName => {
       if (categoryNames.has(categoryName)) {
-        cleanedBagContents[categoryName] = bagContents[categoryName];
+        cleanedBagContents[categoryName] = bagContents[categoryName] || 0;
         cleanedBagCount += bagContents[categoryName] || 0;
       }
     });
     
     // Only update if there were orphaned items
-    if (Object.keys(cleanedBagContents).length !== Object.keys(bagContents).length) {
+    // Note: bagContents is intentionally not in deps to avoid infinite loop
+    // This effect should only run when categories change
+    const currentBagKeys = Object.keys(bagContents || {});
+    if (Object.keys(cleanedBagContents).length !== currentBagKeys.length) {
       setBagContents(cleanedBagContents);
       setBagCount(cleanedBagCount);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categories, isLoading]);
 
   // Save data to storage whenever it changes (but only after user has made changes)
@@ -203,25 +214,33 @@ export const WardrobeProvider = ({ children }) => {
     }
   };
 
-  const dispatchLaundry = (bagContents) => {
+  const dispatchLaundry = (bagContentsToDispatch) => {
     markUserChanged();
     
-    // Validate and adjust bag contents
-    // Note: Items in bag were already removed from cleanCount when tossed,
-    // so we can dispatch all items in bag (they're already accounted for)
+    // Validate input
+    if (!bagContentsToDispatch || typeof bagContentsToDispatch !== 'object') {
+      return;
+    }
+    
+    // Use ref to get current categories to avoid stale closures
+    // Validate and adjust bag contents against current categories
+    // Note: Items in bag are already dirty (marked when tossed to hamper)
+    // They're part of dirtyCount, so we validate against dirtyCount
+    const currentCategories = categoriesRef.current || [];
     const validatedBagContents = {};
     let totalValidated = 0;
     
-    Object.keys(bagContents).forEach(categoryName => {
-      const countInBag = bagContents[categoryName] || 0;
-      if (countInBag === 0) return;
+    Object.keys(bagContentsToDispatch).forEach(categoryName => {
+      const countInBag = Number(bagContentsToDispatch[categoryName]) || 0;
+      if (countInBag <= 0) return;
       
-      const category = categories.find(cat => cat.name === categoryName);
+      const category = currentCategories.find(cat => cat && cat.name === categoryName);
       if (!category) return;
       
-      // Items in bag are already removed from cleanCount, so we can dispatch them
-      // Just validate that we don't exceed totalOwned
-      const toDispatch = Math.min(countInBag, category.totalOwned);
+      // Items in bag are dirty items waiting to be washed
+      // Validate: can't dispatch more than what's actually dirty
+      // Items in bag should be <= dirtyCount (they're part of dirtyCount)
+      const toDispatch = Math.min(countInBag, category.dirtyCount || 0);
       if (toDispatch > 0) {
         validatedBagContents[categoryName] = toDispatch;
         totalValidated += toDispatch;
@@ -233,6 +252,8 @@ export const WardrobeProvider = ({ children }) => {
       return;
     }
     
+    // Create batch and update states
+    // React will batch these updates automatically
     const newBatch = createBatch(`BATCH_${Date.now()}`, validatedBagContents);
     setBatches(prev => [...prev, newBatch]);
     setCategories(prev => {
@@ -240,6 +261,7 @@ export const WardrobeProvider = ({ children }) => {
       // Automatically remove categories with 0 items
       return updated.filter(cat => cat.totalOwned > 0);
     });
+    
     // Clear the bag after dispatching
     setBagContents({});
     setBagCount(0);
@@ -248,16 +270,18 @@ export const WardrobeProvider = ({ children }) => {
   const addToBag = (categoryName, count = 1) => {
     markUserChanged();
     
-    // Find the category to validate available clean items
-    const category = categories.find(cat => cat.name === categoryName);
+    // Validate input
+    if (!categoryName || typeof categoryName !== 'string') return;
+    
+    // Use ref to get current categories to avoid stale closures
+    const currentCategories = categoriesRef.current || [];
+    const category = currentCategories.find(cat => cat && cat.name === categoryName);
     if (!category) return;
     
-    // cleanCount already reflects items available in closet (items in bag are already removed)
-    // So we can directly use cleanCount to check availability
-    const availableClean = category.cleanCount;
-    
-    // Only add what's available
-    const toAdd = Math.max(0, Math.min(count, availableClean));
+    // Note: When called from tossItem, items are already marked as dirty
+    // The bag contains dirty items waiting to be sent to laundry
+    // Since React batches state updates, we read the current state here
+    const toAdd = Math.max(0, Number(count) || 0);
     if (toAdd === 0) return;
     
     setBagContents((prev) => ({
@@ -275,9 +299,14 @@ export const WardrobeProvider = ({ children }) => {
 
   const completeBatch = (batchId) => {
     markUserChanged();
+    
+    // Validate input
+    if (!batchId) return;
+    
     // Get the current batch from ref to avoid stale closure
-    const batch = batchesRef.current.find(b => b.id === batchId);
-    if (!batch) return;
+    const currentBatches = batchesRef.current || [];
+    const batch = currentBatches.find(b => b && b.id === batchId);
+    if (!batch || !batch.contents) return;
 
     const completedBatch = {
       ...batch,
@@ -286,59 +315,64 @@ export const WardrobeProvider = ({ children }) => {
     };
 
     // Update all states (React will batch these updates automatically)
-    setBatches(prev => prev.map(b => b.id === batchId ? completedBatch : b));
+    setBatches(prev => (prev || []).map(b => b && b.id === batchId ? completedBatch : b));
     setCategories(prev => {
-      const updated = processBatchComplete(prev, batch.contents);
+      const updated = processBatchComplete(prev || [], batch.contents || {});
       // Automatically remove categories with 0 items
-      return updated.filter(cat => cat.totalOwned > 0);
+      return updated.filter(cat => cat && cat.totalOwned > 0);
     });
-    setLaundryHistory(prev => [...prev, completedBatch]);
+    setLaundryHistory(prev => [...(prev || []), completedBatch]);
   };
 
   const tossItem = (categoryId, count = 1) => {
     markUserChanged();
+    if (!categoryId) return;
     setCategories(prev => {
-      const updated = processItemToss(prev, categoryId, count);
+      const updated = processItemToss(prev || [], categoryId, Number(count) || 1);
       // Automatically remove categories with 0 items
-      return updated.filter(cat => cat.totalOwned > 0);
+      return updated.filter(cat => cat && cat.totalOwned > 0);
     });
   };
 
   const acquireItem = (categoryId, count = 1, price = 0) => {
     markUserChanged();
+    if (!categoryId) return;
     setCategories(prev => {
-      const updated = processItemAcquisition(prev, categoryId, count, price);
+      const updated = processItemAcquisition(prev || [], categoryId, Number(count) || 1, Number(price) || 0);
       // Automatically remove categories with 0 items (shouldn't happen here, but safety check)
-      return updated.filter(cat => cat.totalOwned > 0);
+      return updated.filter(cat => cat && cat.totalOwned > 0);
     });
   };
 
   const retireItem = (id, count, reason) => {
     markUserChanged();
+    if (!id) return;
     setCategories(prev => {
-      const updated = processItemRetirement(prev, id, count, reason);
+      const updated = processItemRetirement(prev || [], id, Number(count) || 1, reason || 'worn_out');
       // Automatically remove categories with 0 items
-      return updated.filter(cat => cat.totalOwned > 0);
+      return updated.filter(cat => cat && cat.totalOwned > 0);
     });
   };
 
   const updateCategoryHibernation = (categoryId, hibernated) => {
     markUserChanged();
-    setCategories(prev => prev.map(cat => 
-      cat.id === categoryId ? { ...cat, hibernated } : cat
+    if (!categoryId) return;
+    setCategories(prev => (prev || []).map(cat => 
+      cat && cat.id === categoryId ? { ...cat, hibernated: Boolean(hibernated) } : cat
     ));
   };
 
   const addCategory = (name, emoji, initialCount = 1) => {
     markUserChanged();
+    if (!name || typeof name !== 'string' || !name.trim()) return;
     const newId = String(Date.now());
-    const newCategory = createDefaultCategory(newId, name, emoji, initialCount);
+    const newCategory = createDefaultCategory(newId, name.trim(), emoji || '👕', Number(initialCount) || 1);
     setCategories(prev => {
-      const updated = [...prev, newCategory];
+      const updated = [...(prev || []), newCategory];
       // Only filter out categories with 0 items if initialCount is explicitly 0 (user created empty category)
       // Otherwise, allow categories to exist even if they have 0 items (user might add items later)
       if (initialCount === 0) {
-        return updated.filter(cat => cat.totalOwned > 0);
+        return updated.filter(cat => cat && cat.totalOwned > 0);
       }
       return updated;
     });
@@ -346,20 +380,27 @@ export const WardrobeProvider = ({ children }) => {
 
   const removeCategory = (categoryId) => {
     markUserChanged();
-    const categoryToRemove = categories.find(cat => cat.id === categoryId);
+    if (!categoryId) return;
     
-    setCategories(prev => prev.filter(cat => cat.id !== categoryId));
+    // Use refs to get current state to avoid stale closures
+    const currentCategories = categoriesRef.current || [];
+    const categoryToRemove = currentCategories.find(cat => cat && cat.id === categoryId);
+    
+    setCategories(prev => (prev || []).filter(cat => cat && cat.id !== categoryId));
     
     // Clean up bag contents if this category had items in bag
-    if (categoryToRemove && bagContents[categoryToRemove.name]) {
-      const itemsInBag = bagContents[categoryToRemove.name] || 0;
-      setBagContents(prev => {
-        const updated = { ...prev };
+    // Use functional update to get current bagContents
+    setBagContents(prev => {
+      const currentBagContents = prev || {};
+      if (categoryToRemove && categoryToRemove.name && currentBagContents[categoryToRemove.name]) {
+        const itemsInBag = Number(currentBagContents[categoryToRemove.name]) || 0;
+        setBagCount(currentBagCount => Math.max(0, (currentBagCount || 0) - itemsInBag));
+        const updated = { ...currentBagContents };
         delete updated[categoryToRemove.name];
         return updated;
-      });
-      setBagCount(prev => Math.max(0, prev - itemsInBag));
-    }
+      }
+      return currentBagContents;
+    });
   };
 
   // Don't render children until data is loaded

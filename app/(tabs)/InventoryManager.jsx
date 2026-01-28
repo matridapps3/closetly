@@ -34,16 +34,19 @@ const hapticFeedback = {
 const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => {
   const animatedClean = useRef(new Animated.Value(0)).current;
   const animatedDirty = useRef(new Animated.Value(0)).current;
+  const animatedInLaundry = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     // Ensure totalOwned is the sum of all states
     const actualTotal = cleanCount + dirtyCount;
     const total = totalOwned > 0 ? totalOwned : actualTotal;
     
+    // Calculate dirty items NOT in laundry
+    const dirtyNotInLaundry = Math.max(0, dirtyCount - inLaundryCount);
+    
     const cleanPercent = total > 0 ? (cleanCount / total) * 100 : 0;
-    // Items in laundry are already counted in dirtyCount, so don't add them twice
-    const totalDirty = dirtyCount;
-    const dirtyPercent = total > 0 ? (totalDirty / total) * 100 : 0;
+    const dirtyPercent = total > 0 ? (dirtyNotInLaundry / total) * 100 : 0;
+    const inLaundryPercent = total > 0 ? (inLaundryCount / total) * 100 : 0;
 
     Animated.parallel([
       Animated.timing(animatedClean, {
@@ -53,6 +56,11 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
       }),
       Animated.timing(animatedDirty, {
         toValue: dirtyPercent,
+        duration: 600,
+        useNativeDriver: false,
+      }),
+      Animated.timing(animatedInLaundry, {
+        toValue: inLaundryPercent,
         duration: 600,
         useNativeDriver: false,
       }),
@@ -69,12 +77,43 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
     outputRange: ['0%', '100%'],
   });
 
-  // Calculate left position for dirty segment (starts where clean ends)
+  const inLaundryWidth = animatedInLaundry.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
+  // Calculate left positions for segments
+  // Clean starts at 0%, Dirty starts where Clean ends, In Laundry starts where Clean + Dirty ends
   const dirtyLeft = animatedClean;
+  
+  // For in laundry left position, create a separate animated value for clean + dirty combined
+  const inLaundryLeftPercent = useRef(new Animated.Value(0)).current;
+  
+  React.useEffect(() => {
+    const actualTotal = cleanCount + dirtyCount;
+    const total = totalOwned > 0 ? totalOwned : actualTotal;
+    const dirtyNotInLaundry = Math.max(0, dirtyCount - inLaundryCount);
+    
+    const cleanPercent = total > 0 ? (cleanCount / total) * 100 : 0;
+    const dirtyPercent = total > 0 ? (dirtyNotInLaundry / total) * 100 : 0;
+    const combinedPercent = cleanPercent + dirtyPercent;
+    
+    Animated.timing(inLaundryLeftPercent, {
+      toValue: combinedPercent,
+      duration: 600,
+      useNativeDriver: false,
+    }).start();
+  }, [cleanCount, dirtyCount, inLaundryCount, totalOwned]);
+  
+  const inLaundryLeft = inLaundryLeftPercent;
+
+  // Calculate dirty items NOT in laundry for display
+  const dirtyNotInLaundry = Math.max(0, dirtyCount - inLaundryCount);
 
   return (
     <View style={styles.flowBarContainer}>
       <View style={styles.flowBarBackground}>
+        {/* Clean segment */}
         <Animated.View
           style={[
             styles.flowBarSegment,
@@ -82,6 +121,7 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
             { width: cleanWidth },
           ]}
         />
+        {/* Dirty (not in laundry) segment */}
         <Animated.View
           style={[
             styles.flowBarSegment,
@@ -96,16 +136,31 @@ const FlowBar = ({ cleanCount, dirtyCount, inLaundryCount = 0, totalOwned }) => 
             },
           ]}
         />
+        {/* In Laundry segment */}
+        <Animated.View
+          style={[
+            styles.flowBarSegment,
+            styles.flowBarInLaundry,
+            { 
+              width: inLaundryWidth,
+              position: 'absolute',
+              left: inLaundryLeft.interpolate({
+                inputRange: [0, 100],
+                outputRange: ['0%', '100%'],
+              }),
+            },
+          ]}
+        />
       </View>
       <View style={styles.flowBarLabels}>
         <Text style={styles.flowBarLabel}>
           <Text style={styles.flowBarLabelClean}>{cleanCount}</Text> clean
         </Text>
         <Text style={styles.flowBarLabel}>
-          <Text style={styles.flowBarLabelDirty}>{dirtyCount}</Text> dirty
-          {inLaundryCount > 0 && (
-            <Text style={styles.flowBarLabelInLaundry}> ({inLaundryCount} in laundry)</Text>
-          )}
+          <Text style={styles.flowBarLabelDirty}>{dirtyNotInLaundry}</Text> dirty
+        </Text>
+        <Text style={styles.flowBarLabel}>
+          <Text style={styles.flowBarLabelInLaundry}>{inLaundryCount}</Text> in laundry
         </Text>
       </View>
     </View>
@@ -283,6 +338,17 @@ const RetireModal = ({ visible, onClose, onConfirm, category }) => {
   );
 };
 
+// Simple emoji validator – ensures the value is an emoji, not letters/numbers/symbols
+const isEmojiChar = (value) => {
+  if (!value || typeof value !== 'string') return false;
+  try {
+    return /\p{Extended_Pictographic}/u.test(value);
+  } catch (e) {
+    // Fallback for environments without Unicode property escapes
+    return /[\u{1F300}-\u{1FAFF}]/u.test(value);
+  }
+};
+
 // Add Category Modal Component
 const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
   const [name, setName] = useState('');
@@ -354,8 +420,20 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
       hapticFeedback.warning();
       return;
     }
+
+    // If user typed something in emoji field but it's not a valid emoji, block and show message
+    if (emoji && !isEmojiChar(emoji)) {
+      hapticFeedback.warning();
+      Alert.alert('Enter an emoji', 'Please use a valid emoji icon for this category.');
+      return;
+    }
+
     hapticFeedback.success();
-    onConfirm(name.trim(), emoji, parseInt(initialCount) || 1);
+
+    // Use emoji from field, or fallback to default only at confirm time
+    const safeEmoji = emoji || '👕';
+    onConfirm(name.trim(), safeEmoji, parseInt(initialCount) || 1);
+    
     setName('');
     setEmoji('👕');
     setInitialCount('1');
@@ -388,22 +466,6 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
 
           <Text style={styles.inputLabel}>EMOJI</Text>
           <View style={styles.emojiPickerContainer}>
-            <TouchableOpacity
-              style={[styles.emojiArrowButton, styles.emojiArrowLeft, !canScrollLeft && styles.emojiArrowDisabled]}
-              onPress={() => {
-                if (scrollViewRef.current && canScrollLeft) {
-                  const currentX = scrollPosition.current || 0;
-                  const newX = Math.max(0, currentX - SCROLL_STEP);
-                  scrollViewRef.current.scrollTo({ x: newX, animated: true });
-                  hapticFeedback.light();
-                }
-              }}
-              disabled={!canScrollLeft}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.emojiArrowText, !canScrollLeft && styles.emojiArrowTextDisabled]}>◀</Text>
-            </TouchableOpacity>
-            
             <ScrollView 
               ref={scrollViewRef}
               horizontal 
@@ -467,24 +529,34 @@ const AddCategoryModal = ({ visible, onClose, onConfirm }) => {
               </TouchableOpacity>
             ))}
             </ScrollView>
-            
-            <TouchableOpacity
-              style={[styles.emojiArrowButton, styles.emojiArrowRight, !canScrollRight && styles.emojiArrowDisabled]}
-              onPress={() => {
-                if (scrollViewRef.current && canScrollRight) {
-                  const currentX = scrollPosition.current || 0;
-                  const maxX = maxScrollX.current || 1000;
-                  const newX = Math.min(maxX, currentX + SCROLL_STEP);
-                  scrollViewRef.current.scrollTo({ x: newX, animated: true });
-                  hapticFeedback.light();
-                }
-              }}
-              disabled={!canScrollRight}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.emojiArrowText, !canScrollRight && styles.emojiArrowTextDisabled]}>▶</Text>
-            </TouchableOpacity>
           </View>
+
+        {/* Custom emoji input */}
+        <Text style={[styles.inputLabel, { marginTop: 4 }]}>
+          ADD YOUR OWN EMOJI
+        </Text>
+        <TextInput
+          style={styles.emojiInput}
+          value={emoji}
+          onChangeText={(text) => {
+            const next = (text || '').trim();
+
+            // Split into user-visible characters so multi-codepoint emojis work
+            const graphemes = Array.from(next);
+            const chosen = graphemes[0] || '';  // allow the field to be cleared
+            setEmoji(chosen);
+
+            // If the name hasn't been manually edited, still allow auto-fill from known map
+            if ((!nameManuallyEdited.current || !name.trim()) && emojiToNameMap[chosen]) {
+              setName(emojiToNameMap[chosen]);
+              nameManuallyEdited.current = false;
+            }
+          }}
+          placeholder="Add"
+          placeholderTextColor="#666666"
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
 
           <Text style={styles.inputLabel}>INITIAL COUNT (Optional)</Text>
           <TextInput
@@ -883,7 +955,7 @@ const InventoryManager = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#000000',
   },
   header: {
     padding: 20,
@@ -978,15 +1050,20 @@ const styles = StyleSheet.create({
   flowBarDirty: {
     backgroundColor: '#FF5252',
   },
+  flowBarInLaundry: {
+    backgroundColor: '#FFAB00',
+  },
   flowBarLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 8,
+    flexWrap: 'wrap',
   },
   flowBarLabel: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#888888',
     letterSpacing: 0.5,
+    marginRight: 12,
   },
   flowBarLabelClean: {
     color: '#00E5FF',
@@ -994,6 +1071,10 @@ const styles = StyleSheet.create({
   },
   flowBarLabelDirty: {
     color: '#FF5252',
+    fontWeight: '700',
+  },
+  flowBarLabelInLaundry: {
+    color: '#FFAB00',
     fontWeight: '700',
   },
   expandedPanel: {
@@ -1236,7 +1317,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#00E5FF',
     fontWeight: '300',
-    marginBottom: 6
   },
   addCategoryTextContainer: {
     flex: 1,
@@ -1284,7 +1364,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#FF5252',
     fontWeight: '300',
-    marginBottom: 6,
+
   },
   categorySelectList: {
     maxHeight: 200,
@@ -1397,6 +1477,16 @@ const styles = StyleSheet.create({
   },
   emojiOptionText: {
     fontSize: 24,
+  },
+  emojiInput: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 20,
+    color: '#FFFFFF',
+    marginBottom: 20,
+    maxWidth: 140,
   },
 });
 

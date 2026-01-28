@@ -2,19 +2,19 @@ import { useWardrobe } from '@/contexts/WardrobeContext';
 import { WardrobeAnalyticsEngine } from '@/contexts/WardrobeEngine';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
-  Dimensions,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  Vibration,
-  View,
+    Animated,
+    Dimensions,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    Vibration,
+    View,
 } from 'react-native';
 import {
-  BarChart,
-  LineChart,
-  PieChart,
+    BarChart,
+    LineChart,
+    PieChart,
 } from 'react-native-chart-kit';
 
 const { width } = Dimensions.get('window');
@@ -27,7 +27,7 @@ const hapticFeedback = {
 };
 
 // Active Batch Card Component
-const ActiveBatchCard = ({ batch, onMarkClean }) => {
+const ActiveBatchCard = ({ batch, onMarkClean, categories }) => {
   const [dissolving, setDissolving] = useState(false);
   const opacity = useRef(new Animated.Value(1)).current;
   const scale = useRef(new Animated.Value(1)).current;
@@ -58,9 +58,18 @@ const ActiveBatchCard = ({ batch, onMarkClean }) => {
     ? 0 
     : Math.floor((Date.now() - timestampDate.getTime()) / (1000 * 60 * 60 * 24));
 
+  // Filter batch contents to only include categories that still exist
   const batchContents = batch.contents || {};
-  const itemsList = Object.entries(batchContents)
-    .filter(([_, count]) => count > 0)
+  const categoryNames = new Set((categories || []).map(cat => cat.name));
+  const validBatchContents = Object.entries(batchContents)
+    .filter(([name, count]) => categoryNames.has(name) && count > 0)
+    .reduce((acc, [name, count]) => {
+      acc[name] = count;
+      return acc;
+    }, {});
+  
+  const validTotalItems = Object.values(validBatchContents).reduce((sum, count) => sum + (Number(count) || 0), 0);
+  const itemsList = Object.entries(validBatchContents)
     .map(([name, count]) => `${count} ${name}`)
     .join(', ') || 'No items';
 
@@ -82,7 +91,7 @@ const ActiveBatchCard = ({ batch, onMarkClean }) => {
           </Text>
         </View>
         <View style={styles.batchCountBadge}>
-          <Text style={styles.batchCountText}>{batch.totalItems || Object.values(batchContents).reduce((sum, count) => sum + (Number(count) || 0), 0)}</Text>
+          <Text style={styles.batchCountText}>{validTotalItems}</Text>
           <Text style={styles.batchCountLabel}>items</Text>
         </View>
       </View>
@@ -106,12 +115,14 @@ const BurnDownChart = ({ data }) => {
   const animatedHeight = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Reset animation when data changes
+    animatedHeight.setValue(0);
     Animated.timing(animatedHeight, {
       toValue: 1,
       duration: 1000,
       useNativeDriver: false,
     }).start();
-  }, []);
+  }, [data.dates, data.categories.length, JSON.stringify(data.categories.map(c => c.values))]);
 
   const chartData = {
     labels: data.dates,
@@ -130,7 +141,7 @@ const BurnDownChart = ({ data }) => {
     <View style={styles.chartContainer}>
       <Text style={styles.chartTitle}>BURN DOWN ANALYSIS</Text>
       <Text style={styles.chartSubtitle}>
-        Clean stock levels over last 30 days
+        30-Day Clean Clothes Forecast
       </Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -231,14 +242,20 @@ const DeadStockChart = ({ activeCount, stagnantCount }) => {
 
 // Procrastination Chart Component
 const ProcrastinationChart = ({ cycleData, optimalInterval }) => {
-  const barAnimations = useRef(
-    cycleData.map(() => new Animated.Value(0))
-  ).current;
+  const barAnimationsRef = useRef([]);
 
   useEffect(() => {
+    // Recreate animations if data length changed
+    if (barAnimationsRef.current.length !== cycleData.length) {
+      barAnimationsRef.current = cycleData.map(() => new Animated.Value(0));
+    } else {
+      // Reset existing animations
+      barAnimationsRef.current.forEach(anim => anim.setValue(0));
+    }
+    
     Animated.stagger(
       100,
-      barAnimations.map((anim) =>
+      barAnimationsRef.current.map((anim) =>
         Animated.timing(anim, {
           toValue: 1,
           duration: 500,
@@ -246,7 +263,7 @@ const ProcrastinationChart = ({ cycleData, optimalInterval }) => {
         })
       )
     ).start();
-  }, []);
+  }, [cycleData]);
 
   const chartData = {
     labels: cycleData.map((_, i) => `C${i + 1}`),
@@ -262,28 +279,30 @@ const ProcrastinationChart = ({ cycleData, optimalInterval }) => {
       <Text style={styles.chartTitle}>LAUNDRY CONSISTENCY</Text>
       <Text style={styles.chartSubtitle}>Days between cycles</Text>
 
-      <BarChart
-        data={chartData}
-        width={CHART_WIDTH}
-        height={220}
-        chartConfig={{
-          backgroundColor: '#1E1E1E',
-          backgroundGradientFrom: '#1E1E1E',
-          backgroundGradientTo: '#1E1E1E',
-          decimalPlaces: 0,
-          color: (opacity = 1) => `rgba(255, 171, 0, ${opacity})`,
-          labelColor: (opacity = 1) => `rgba(136, 136, 136, ${opacity})`,
-          style: {
-            borderRadius: 16,
-          },
-          barPercentage: 0.7,
-        }}
-        style={styles.chart}
-        withInnerLines={true}
-        withVerticalLines={false}
-        showBarTops={false}
-        fromZero
-      />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <BarChart
+          data={chartData}
+          width={Math.max(CHART_WIDTH, chartData.labels.length * 40)}
+          height={220}
+          chartConfig={{
+            backgroundColor: '#1E1E1E',
+            backgroundGradientFrom: '#1E1E1E',
+            backgroundGradientTo: '#1E1E1E',
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(255, 171, 0, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(136, 136, 136, ${opacity})`,
+            style: {
+              borderRadius: 16,
+            },
+            barPercentage: 0.7,
+          }}
+          style={styles.chart}
+          withInnerLines={true}
+          withVerticalLines={false}
+          showBarTops={false}
+          fromZero
+        />
+      </ScrollView>
 
       <View style={styles.optimalLineContainer}>
         <View style={styles.optimalLine} />
@@ -343,7 +362,9 @@ const AnalyticsLab = () => {
   const { categories, batches, laundryHistory, completeBatch } = useWardrobe();
   
   // Filter only in-progress batches
-  const activeBatches = (batches || []).filter(b => b && b.status === 'in_progress');
+  const activeBatches = useMemo(() => {
+    return (batches || []).filter(b => b && b.status === 'in_progress');
+  }, [batches]);
 
   // Create analytics engine instance
   const engine = useMemo(() => {
@@ -486,6 +507,7 @@ const AnalyticsLab = () => {
                   key={batch.id}
                   batch={batch}
                   onMarkClean={handleMarkClean}
+                  categories={categories}
                 />
               ))
             )}
@@ -493,7 +515,7 @@ const AnalyticsLab = () => {
         ) : (
           <View style={styles.insightsTab}>
             {burnDownData.categories.length > 0 ? (
-              <BurnDownChart data={burnDownData} />
+              <BurnDownChart key={`burndown-${categories.length}-${burnDownData.dates.length}`} data={burnDownData} />
             ) : (
               <View style={styles.chartContainer}>
                 <Text style={styles.chartTitle}>BURN DOWN ANALYSIS</Text>
@@ -512,6 +534,7 @@ const AnalyticsLab = () => {
 
             {(categories || []).filter(c => c && !c.hibernated && c.totalOwned > 0).length > 0 ? (
               <DeadStockChart 
+                key={`efficiency-${inventoryEfficiency.activeItems}-${inventoryEfficiency.stagnantItems}`}
                 activeCount={inventoryEfficiency.activeItems} 
                 stagnantCount={inventoryEfficiency.stagnantItems} 
               />
@@ -531,6 +554,7 @@ const AnalyticsLab = () => {
 
             {laundryCycles.intervals.length > 0 ? (
               <ProcrastinationChart
+                key={`procrastination-${procrastinationData.join('-')}-${optimalInterval}`}
                 cycleData={procrastinationData}
                 optimalInterval={optimalInterval}
               />
@@ -569,7 +593,7 @@ const AnalyticsLab = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#000000',
   },
   tabBar: {
     flexDirection: 'row',

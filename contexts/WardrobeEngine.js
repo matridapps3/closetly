@@ -124,7 +124,7 @@ export class WardrobeAnalyticsEngine {
     let penalty = 0;
 
     for (const category of activeCategories) {
-      if (category.cleanCount < category.safetyThreshold) {
+      if (category.cleanCount < category.safetyThreshold && category.safetyThreshold > 0) {
         const severity = 1 - (category.cleanCount / category.safetyThreshold);
         penalty += severity * 30;
       }
@@ -145,6 +145,7 @@ export class WardrobeAnalyticsEngine {
     if (intervals.length < 2) return 50;
 
     const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    if (avgInterval === 0) return 0; // Prevent division by zero
     const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
     const coefficientOfVariation = Math.sqrt(variance) / avgInterval;
 
@@ -382,6 +383,9 @@ export class WardrobeAnalyticsEngine {
       return dailyUse > 0 ? (c.cleanCount - c.safetyThreshold) / dailyUse : 14;
     });
 
+    // Safety check: ensure bufferDays is not empty
+    if (bufferDays.length === 0) return 7;
+
     const minBuffer = Math.min(...bufferDays);
     return Math.max(3, Math.min(14, Math.floor(minBuffer)));
   }
@@ -447,7 +451,7 @@ export class WardrobeAnalyticsEngine {
         urgency: stockout.severity,
         type: 'bottleneck',
         title: stockout.severity === 'critical' ? 'Bottleneck Detected' : 'Low Stock Warning',
-        message: `${stockout.categoryName}. You have ${stockout.currentClean} ${stockout.currentClean === 1 ? 'item' : 'items'} left. At your current pace, you reach zero on ${this._formatDay(stockout.stockoutDate)}.`,
+        message: `Your ${stockout.categoryName} are running low. You have ${stockout.currentClean} ${stockout.categoryName}${stockout.currentClean === 1 ? '' : ''} left. At your current pace, you'll run out by ${this._formatDay(stockout.stockoutDate)}.`,
       });
     }
 
@@ -462,7 +466,7 @@ export class WardrobeAnalyticsEngine {
         type: 'deadstock',
         title: 'Low Utilization',
         message: topDeadCategory 
-          ? `You own ${topDeadCategory.totalOwned} ${topDeadCategory.categoryName} but rarely use them. ${efficiency.stagnantItems} items are Dead Stock.`
+          ? `Your ${topDeadCategory.categoryName} are underused. You own ${topDeadCategory.totalOwned} ${topDeadCategory.categoryName} but rarely wear them. In total, ${efficiency.stagnantItems} items are sitting as dead stock across your wardrobe.`
           : `${efficiency.stagnantItems} items in your wardrobe are rarely worn. Consider donating unused items.`,
       });
     }
@@ -518,13 +522,22 @@ export class WardrobeAnalyticsEngine {
     const activeCategories = this.categories.filter(c => !c.hibernated && c.totalOwned > 0);
     if (activeCategories.length < 2) return null;
 
-    const cleanCounts = activeCategories.map(c => ({ name: c.name, clean: c.cleanCount }));
-    const maxClean = Math.max(...cleanCounts.map(c => c.clean));
-    const minClean = Math.min(...cleanCounts.map(c => c.clean));
+    const cleanCounts = activeCategories.map(c => ({ name: c.name, clean: c.cleanCount || 0 }));
+    
+    // Safety check: ensure we have valid data
+    if (cleanCounts.length === 0) return null;
+    
+    const cleanValues = cleanCounts.map(c => c.clean);
+    const maxClean = Math.max(...cleanValues);
+    const minClean = Math.min(...cleanValues);
 
     if (maxClean > 5 && minClean < 3) {
       const maxCat = cleanCounts.find(c => c.clean === maxClean);
       const minCat = cleanCounts.find(c => c.clean === minClean);
+      
+      // Safety check: ensure both categories are found
+      if (!maxCat || !minCat) return null;
+      
       return {
         message: `You have ${maxClean} clean ${maxCat.name.toLowerCase()} but only ${minClean} clean ${minCat.name.toLowerCase()}. You effectively have only ${minClean} outfits available.`,
       };
@@ -574,23 +587,30 @@ export class WardrobeAnalyticsEngine {
 // ============================================================================
 
 /**
- * Process item toss - items are moved to bag (still clean, but not available in closet)
- * Decreases cleanCount to reflect items no longer available in closet
- * Items become dirty only when dispatched to laundry
+ * Process item toss - items are moved to hamper and marked as dirty
+ * When clothes are tossed to hamper, they become dirty (need washing)
+ * Decreases cleanCount and increases dirtyCount
  */
 export const processItemToss = (categories, categoryId, count = 1) => {
+  if (!categories || !Array.isArray(categories) || !categoryId) return categories || [];
+  const tossCount = Math.max(0, Number(count) || 0);
+  if (tossCount === 0) return categories;
+  
   return categories.map(cat => {
-    if (cat.id !== categoryId) return cat;
+    if (!cat || cat.id !== categoryId) return cat;
     
-    const toToss = Math.min(count, cat.cleanCount);
-    // Items are moved to bag - decrease cleanCount to reflect they're no longer in closet
-    // They're still "clean" (not dirty) but not available for tossing again
+    const toToss = Math.min(tossCount, cat.cleanCount || 0);
+    if (toToss === 0) return cat;
+    
+    // Items are moved to hamper - they become dirty when tossed
+    // Hamper = collection point for dirty clothes before washing
     return {
       ...cat,
-      cleanCount: Math.max(0, cat.cleanCount - toToss),
+      cleanCount: Math.max(0, (cat.cleanCount || 0) - toToss),
+      dirtyCount: (cat.dirtyCount || 0) + toToss, // Mark as dirty when tossed to hamper
       lastWornDate: new Date().toISOString(),
       wearHistory: [
-        ...cat.wearHistory,
+        ...(cat.wearHistory || []),
         { date: new Date().toISOString(), count: toToss },
       ],
     };
@@ -598,33 +618,34 @@ export const processItemToss = (categories, categoryId, count = 1) => {
 };
 
 /**
- * Process batch dispatch - items become dirty when sent to laundry
- * When items are sent to laundry, they are marked as dirty and in laundry
- * Note: Items in bag were already removed from cleanCount when tossed,
- * so we don't decrease cleanCount again here
+ * Process batch dispatch - items in hamper are sent to laundry
+ * When items are sent to laundry, they're already dirty (from hamper)
+ * We just mark them as "in laundry" (being washed)
+ * Note: Items in bag are already dirty (marked when tossed to hamper)
  */
 export const processBatchDispatch = (categories, bagContents) => {
+  if (!categories || !Array.isArray(categories)) return categories || [];
+  if (!bagContents || typeof bagContents !== 'object') return categories;
+  
   return categories.map(cat => {
-    const countInBag = bagContents[cat.name] || 0;
+    if (!cat || !cat.name) return cat;
+    const countInBag = Number(bagContents[cat.name]) || 0;
     if (countInBag === 0) return cat;
 
-    // Items in bag were already removed from cleanCount when tossed
-    // Validate: ensure we don't exceed totalOwned
-    // Items in bag + cleanCount + dirtyCount should equal totalOwned
-    const itemsInBag = countInBag;
-    const currentTotal = cat.cleanCount + cat.dirtyCount;
-    const maxCanDispatch = Math.max(0, cat.totalOwned - currentTotal);
-    const toDispatch = Math.min(itemsInBag, maxCanDispatch);
+    // Items in bag are already dirty (marked when tossed to hamper)
+    // Validate: ensure we don't exceed dirtyCount (items in bag are part of dirtyCount)
+    // Items in bag should be <= dirtyCount (they're dirty items waiting to be washed)
+    const toDispatch = Math.min(countInBag, cat.dirtyCount || 0);
     
     if (toDispatch === 0) return cat;
 
-    // Items become dirty when dispatched to laundry
-    // They are both dirty (need washing) and in laundry (being washed)
-    // cleanCount already decreased when items were tossed, so no change here
+    // Items are already dirty, just mark them as in laundry (being washed)
+    // dirtyCount stays the same (items were already marked dirty when tossed)
+    // We just move them from "dirty in hamper" to "dirty in laundry"
     return {
       ...cat,
-      dirtyCount: cat.dirtyCount + toDispatch, // Mark as dirty
-      inLaundryCount: cat.inLaundryCount + toDispatch, // Mark as in laundry
+      inLaundryCount: (cat.inLaundryCount || 0) + toDispatch, // Mark as in laundry
+      // dirtyCount remains the same - items were already dirty
     };
   });
 };
@@ -634,25 +655,29 @@ export const processBatchDispatch = (categories, bagContents) => {
  * When laundry completes, items are removed from dirty and become clean
  */
 export const processBatchComplete = (categories, batchContents) => {
+  if (!categories || !Array.isArray(categories)) return categories || [];
+  if (!batchContents || typeof batchContents !== 'object') return categories;
+  
   return categories.map(cat => {
-    const countInBatch = batchContents[cat.name] || 0;
+    if (!cat || !cat.name) return cat;
+    const countInBatch = Number(batchContents[cat.name]) || 0;
     if (countInBatch === 0) return cat;
 
     // Validate: can't complete more items than are actually in laundry
     // This handles edge cases where items were retired while batch was in progress
-    const actualInLaundry = Math.min(countInBatch, cat.inLaundryCount);
-    const actualDirty = Math.min(countInBatch, cat.dirtyCount);
+    const actualInLaundry = Math.min(countInBatch, cat.inLaundryCount || 0);
+    const actualDirty = Math.min(countInBatch, cat.dirtyCount || 0);
     
     // Items come back clean from laundry
     // Remove from both inLaundryCount and dirtyCount (they're no longer dirty)
-    const newInLaundryCount = Math.max(0, cat.inLaundryCount - actualInLaundry);
-    const newDirtyCount = Math.max(0, cat.dirtyCount - actualDirty);
+    const newInLaundryCount = Math.max(0, (cat.inLaundryCount || 0) - actualInLaundry);
+    const newDirtyCount = Math.max(0, (cat.dirtyCount || 0) - actualDirty);
     
     return {
       ...cat,
       inLaundryCount: newInLaundryCount,
       dirtyCount: newDirtyCount, // Remove from dirty when laundry completes
-      cleanCount: cat.cleanCount + actualInLaundry, // Items become clean
+      cleanCount: (cat.cleanCount || 0) + actualInLaundry, // Items become clean
     };
   });
 };
@@ -661,19 +686,24 @@ export const processBatchComplete = (categories, batchContents) => {
  * Process item acquisition (purchase)
  */
 export const processItemAcquisition = (categories, categoryId, count = 1, price = 0) => {
+  if (!categories || !Array.isArray(categories) || !categoryId) return categories || [];
+  const acquireCount = Math.max(0, Number(count) || 0);
+  const acquirePrice = Math.max(0, Number(price) || 0);
+  if (acquireCount === 0) return categories;
+  
   return categories.map(cat => {
-    if (cat.id !== categoryId) return cat;
+    if (!cat || cat.id !== categoryId) return cat;
 
-    const newTotal = cat.totalOwned + count;
+    const newTotal = (cat.totalOwned || 0) + acquireCount;
     return {
       ...cat,
       totalOwned: newTotal,
-      cleanCount: cat.cleanCount + count,
+      cleanCount: (cat.cleanCount || 0) + acquireCount,
       safetyThreshold: Math.ceil(newTotal * 0.2) || 2,
       maxBatchSize: Math.ceil(newTotal * 0.4) || 2,
       purchaseHistory: [
-        ...cat.purchaseHistory,
-        { date: new Date().toISOString(), count, price },
+        ...(cat.purchaseHistory || []),
+        { date: new Date().toISOString(), count: acquireCount, price: acquirePrice },
       ],
     };
   });
@@ -686,18 +716,24 @@ export const processItemAcquisition = (categories, categoryId, count = 1, price 
  * retire proportionally from both when retiring dirty items.
  */
 export const processItemRetirement = (categories, categoryId, count = 1, reason = 'worn_out') => {
+  if (!categories || !Array.isArray(categories) || !categoryId) return categories || [];
+  const retireCount = Math.max(0, Number(count) || 0);
+  if (retireCount === 0) return categories;
+  
   return categories.map(cat => {
-    if (cat.id !== categoryId) return cat;
+    if (!cat || cat.id !== categoryId) return cat;
 
     // Retire from totalOwned, prioritizing clean items, then dirty, then in laundry
-    const toRetire = Math.min(count, cat.totalOwned);
-    const newTotal = Math.max(0, cat.totalOwned - toRetire);
+    const toRetire = Math.min(retireCount, cat.totalOwned || 0);
+    if (toRetire === 0) return cat;
+    
+    const newTotal = Math.max(0, (cat.totalOwned || 0) - toRetire);
     
     // Calculate how many to retire from each state
     let remainingToRetire = toRetire;
-    let newCleanCount = cat.cleanCount;
-    let newDirtyCount = cat.dirtyCount;
-    let newInLaundryCount = cat.inLaundryCount;
+    let newCleanCount = cat.cleanCount || 0;
+    let newDirtyCount = cat.dirtyCount || 0;
+    let newInLaundryCount = cat.inLaundryCount || 0;
     
     // First retire from clean items
     const retireFromClean = Math.min(remainingToRetire, newCleanCount);
@@ -732,8 +768,8 @@ export const processItemRetirement = (categories, categoryId, count = 1, reason 
       safetyThreshold: Math.ceil(newTotal * 0.2) || 2,
       maxBatchSize: Math.ceil(newTotal * 0.4) || 2,
       retirementHistory: [
-        ...cat.retirementHistory,
-        { date: new Date().toISOString(), count: toRetire, reason },
+        ...(cat.retirementHistory || []),
+        { date: new Date().toISOString(), count: toRetire, reason: reason || 'worn_out' },
       ],
     };
   });
@@ -750,12 +786,16 @@ export const processItemRetirement = (categories, categoryId, count = 1, reason 
  *          All counts are non-negative
  */
 export const validateAndFixCategoryConsistency = (categories) => {
+  if (!categories || !Array.isArray(categories)) return [];
+  
   return categories.map(cat => {
+    if (!cat || typeof cat !== 'object') return cat;
+    
     // Ensure all counts are non-negative
-    let cleanCount = Math.max(0, cat.cleanCount || 0);
-    let dirtyCount = Math.max(0, cat.dirtyCount || 0);
-    let inLaundryCount = Math.max(0, cat.inLaundryCount || 0);
-    let totalOwned = Math.max(0, cat.totalOwned || 0);
+    let cleanCount = Math.max(0, Number(cat.cleanCount) || 0);
+    let dirtyCount = Math.max(0, Number(cat.dirtyCount) || 0);
+    let inLaundryCount = Math.max(0, Number(cat.inLaundryCount) || 0);
+    let totalOwned = Math.max(0, Number(cat.totalOwned) || 0);
     
     // Fix: inLaundryCount cannot exceed dirtyCount
     if (inLaundryCount > dirtyCount) {

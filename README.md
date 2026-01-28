@@ -1,10 +1,75 @@
-# Wardrobe Flow - Dashboard Implementation
+# Closetly
+
+A smart, data-driven wardrobe management app that helps you optimize your clothing inventory, track laundry cycles, and maintain a healthy wardrobe flow. Built with React Native and Expo, featuring a minimalist design with high-contrast neon accents on deep black backgrounds.
 
 ## Overview
-A minimalist, data-driven inventory optimization app for personal wardrobes. Built with React Native following the "Minimalist Labz" design philosophy featuring high-contrast neon accents on deep charcoal backgrounds.
+
+Closetly treats your wardrobe as a production system, using statistical analysis to predict stockouts, detect dead stock, and optimize your laundry schedule. The app tracks your clothing inventory across three states: **Clean**, **Dirty**, and **In Laundry**, providing real-time insights and analytics to keep your wardrobe flowing smoothly.
+
+## Key Features
+
+### 🏠 Dashboard
+- **Flow Score**: Visual health indicator (0-100) showing overall wardrobe availability
+  - Cyan (≥80%): Optimal flow
+  - Amber (50-79%): Warning state
+  - Red (<50%): Critical - action needed
+- **Smart Insights**: Dynamic alerts and behavioral analysis
+  - Bottleneck warnings (low clean stock)
+  - Dead stock detection
+  - Laundry consistency recommendations
+  - Category-specific insights
+- **Welcome Onboarding**: Guided tour for first-time users
+
+### 📦 Inventory Manager
+- **Category Management**: Create and organize clothing categories with custom emojis
+  - Add/remove categories
+  - Custom emoji selection (grid picker + text input with validation)
+  - Auto-suggested category names based on emoji
+- **Item Tracking**: Manage your clothing inventory
+  - Add items to categories (acquisition)
+  - Remove/retire items
+  - Hibernate unused categories
+- **Flow Bar**: Visual representation of inventory state
+  - Clean items (cyan)
+  - Dirty items (not in laundry) (amber)
+  - In laundry items (orange)
+  - Real-time synchronization across all tabs
+
+### 🧺 Virtual Hamper
+- **Quick Toss**: Send items to the hamper with one tap
+  - Items automatically marked as dirty when tossed
+  - Category-based organization
+  - Quick fill and dump all options
+- **Laundry Dispatch**: Send hamper contents to laundry
+  - Creates laundry batches
+  - Tracks items in process
+  - Updates inventory state automatically
+
+### 📊 Analytics Lab
+
+#### Active Cycles Tab
+- **In Process Batches**: View all active laundry batches
+  - Batch details (items, count, days ago)
+  - Mark as clean to return items to inventory
+  - Automatic cleanup of orphaned batches
+
+#### Data Lab Tab
+- **Burn Down Analysis**: 30-day forecast of clean stock levels
+  - Multi-category line chart
+  - Predicts when categories will run out
+  - Scrollable for long date ranges
+- **Inventory Efficiency**: Active vs. Stagnant items
+  - Pie chart visualization
+  - Percentage utilization display
+  - Identifies underutilized inventory
+- **Laundry Consistency**: Days between laundry cycles
+  - Bar chart showing cycle intervals
+  - Optimal interval recommendations
+  - Scrollable for multiple cycles
 
 ## Design Philosophy
-- **Background**: Deep charcoal (#121212)
+
+- **Background**: Deep black (#000000)
 - **Accents**: Neon cyan (#00E5FF), amber (#FFAB00), red (#FF5252)
 - **Typography**: Monospaced numbers, wide-tracked labels
 - **Principle**: Industrial gauge aesthetics with minimal UI
@@ -17,256 +82,258 @@ npm install
 yarn install
 ```
 
-## Required Dependencies
-- `react-native`: Core framework
-- `react-native-svg`: For the Health Ring circular progress indicator
-- `expo` (optional): For easier development and testing
+## Running the App
 
-## Component Structure
+```bash
+# Start development server (LAN mode)
+npm start
 
-### 1. Health Ring Component
-**Purpose**: Visual representation of wardrobe health (0-100%)
+# Run on Android
+npm run android
 
-**Color Logic**:
-- **Cyan (#00E5FF)**: Score ≥ 80% - Optimal flow
-- **Amber (#FFAB00)**: Score 50-79% - Warning state
-- **Red (#FF5252)**: Score < 50% - Critical failure
+# Run on iOS
+npm run ios
 
-**Features**:
-- Animated circular progress ring
-- Large monospaced score display
-- Heavy industrial gauge aesthetic
-- Smooth 1.5s animation on score changes
+# Run on Web
+npm run web
 
-### 2. Smart Insight Cards
-**Purpose**: Dynamic alerts and behavioral analysis feed
-
-**Card Structure**:
-- Left border (4px) indicates urgency level
-- Title in white bold text
-- Body in light grey (#AAAAAA)
-- Category icon on right side
-- Subtle elevation shadow for depth
-
-## Smart Insight Logic Library
-
-### 🔴 Type A: Critical Alerts (Immediate Action Required)
-
-#### 1. Bottleneck Warning
-```javascript
-Logic: Clean_Stock < (Daily_Burn_Rate * 2)
-Trigger: When any category will run out in <2 days
+# Start with tunnel (for testing on physical devices)
+npm run tunnel
 ```
 
-#### 2. Monday Panic Forecast
-```javascript
-Logic: Historical pattern detection for weekday stockouts
-Trigger: Pattern shows recurring zero-stock on specific days
+## Tech Stack
+
+- **Framework**: React Native with Expo
+- **Navigation**: Expo Router
+- **State Management**: React Context API
+- **Data Persistence**: AsyncStorage
+- **Charts**: react-native-chart-kit
+- **Icons**: @expo/vector-icons
+- **Haptics**: expo-haptics
+
+## Project Structure
+
+```
+wardrobeflow/
+├── app/
+│   ├── (tabs)/
+│   │   ├── WardrobeFlowDashboard.jsx  # Main dashboard
+│   │   ├── InventoryManager.jsx        # Category & item management
+│   │   ├── VirtualHamper.jsx           # Hamper & laundry dispatch
+│   │   ├── AnalyticsLab.jsx            # Charts & analytics
+│   │   └── _layout.tsx                  # Tab navigation
+│   └── _layout.tsx                     # Root layout
+├── contexts/
+│   ├── WardrobeContext.js              # Global state management
+│   ├── WardrobeEngine.js                # Business logic & analytics
+│   └── NavigationContext.js            # Navigation state
+├── components/
+│   ├── Navbar.tsx                       # Top navigation bar
+│   ├── Tabbar.tsx                      # Bottom tab bar
+│   └── ui/                             # Reusable UI components
+└── constants/
+    └── theme.ts                        # Design tokens
 ```
 
-#### 3. Laundry Overload
-```javascript
-Logic: Dirty_Count > (Total_Owned * 0.8)
-Trigger: >80% of wardrobe is dirty
-```
+## Core Architecture
 
-### 🟠 Type B: Efficiency Opportunities
+### State Management
 
-#### 4. Pareto Dead Stock Detector
-```javascript
-Logic: Total_Owned is high BUT Max_Batch_Size is low over 3 cycles
-Trigger: 20 items owned but only 5 regularly used
-Purpose: Identify underutilized inventory
-```
+The app uses React Context (`WardrobeContext`) to manage global state:
 
-#### 5. Limiting Reagent (Outfit Capacity)
-```javascript
-Logic: Min(Clean_Tops, Clean_Bottoms)
-Trigger: Imbalance between clothing categories
-Purpose: Show true outfit availability
-```
+- **Categories**: Array of clothing categories with counts (clean, dirty, in laundry, total)
+- **Batches**: Active and completed laundry batches
+- **Laundry History**: Historical laundry cycle data
+- **Bag Contents**: Items currently in the hamper
 
-#### 6. False Scarcity Check
-```javascript
-Logic: User accesses "Buy" screen while Dirty_Count > 50%
-Trigger: Shopping intent with high dirty inventory
-Purpose: Prevent unnecessary purchases
-```
+All state is persisted to AsyncStorage and automatically synchronized across all tabs.
 
-### 🔵 Type C: Behavioral Analysis
+### Analytics Engine
 
-#### 7. Procrastination Index
-```javascript
-Logic: Standard_Deviation of days_between_laundry
-Trigger: High variance in laundry schedule
-Purpose: Encourage routine stability
-```
+The `WardrobeAnalyticsEngine` class provides:
 
-#### 8. Seasonal Drift
-```javascript
-Logic: Category_Usage = 0 for >45 days
-Trigger: Items unused for 6+ weeks
-Purpose: Suggest storage optimization
-```
+- **Flow Score Calculation**: Weighted algorithm considering:
+  - Clean ratio (35%)
+  - Category balance (25%)
+  - Bottleneck penalty (25%)
+  - Consistency bonus (15%)
+- **Burn Down Predictions**: Forecasts when categories will run out of clean items
+- **Dead Stock Detection**: Identifies rarely-used items
+- **Inventory Efficiency**: Calculates active vs. stagnant items
+- **Laundry Cycle Analysis**: Tracks consistency and optimal intervals
 
-#### 9. One-In, One-Out Prompt
-```javascript
-Logic: Triggered 7 days post-purchase if no discard logged
-Purpose: Maintain inventory discipline
-```
+### Data Flow
 
-## Implementation Roadmap
+1. **User Actions** → Context functions (e.g., `tossItem`, `dispatchLaundry`)
+2. **Context** → Engine processing (e.g., `processItemToss`, `processBatchDispatch`)
+3. **Engine** → State updates (categories, batches, history)
+4. **State** → UI re-renders (charts, counts, insights)
+5. **State** → AsyncStorage persistence
 
-### Phase 1: Static Dashboard ✅
-- [x] Health Ring with color-coded states
-- [x] Scrollable insight feed
-- [x] Card styling with urgency indicators
-- [x] Animated ring progress
+## Key Features Explained
 
-### Phase 2: State Management (Next Steps)
-```javascript
-// Recommended: Redux Toolkit or Zustand
-const wardrobeStore = {
-  inventory: {
-    totalOwned: {},
-    cleanStock: {},
-    dirtyStock: {},
-  },
-  usage: {
-    dailyBurnRate: {},
-    rotationHistory: [],
-  },
-  insights: [],
-  flowScore: 0,
-}
-```
+### Flow Score
 
-### Phase 3: Logic Engine
-Implement calculation functions for each insight type:
+The Flow Score (0-100) represents your wardrobe's health:
 
-```javascript
-// Example: Bottleneck Detection
-function detectBottleneck(category) {
-  const cleanStock = inventory.cleanStock[category];
-  const burnRate = usage.dailyBurnRate[category];
-  const daysRemaining = cleanStock / burnRate;
-  
-  if (daysRemaining < 2) {
-    return {
-      urgency: 'critical',
-      type: 'bottleneck',
-      title: 'Bottleneck Detected',
-      message: `${category}. You have ${cleanStock} items left. At your current pace, you reach zero on ${predictDate(daysRemaining)}.`
-    };
-  }
-  return null;
-}
-```
+- **High Score (≥80)**: You have plenty of clean clothes available
+- **Medium Score (50-79)**: Some categories may be running low
+- **Low Score (<50)**: Critical - multiple categories need attention
 
-### Phase 4: Data Input Screens
-- Laundry Chute: Quick-add dirty items
-- Inventory Editor: Manage total owned
-- Usage Logger: Track what's being worn
+The score is calculated using:
+- Clean inventory ratio across all categories
+- Balance between categories
+- Bottleneck severity (categories below safety threshold)
+- Laundry consistency (regularity of cycles)
 
-### Phase 5: Analytics Dashboard
-- Flow Score calculation algorithm
-- Historical trend graphs
-- Predictive modeling for stockouts
+### Smart Insights
 
-## Usage Example
+The app generates contextual insights:
 
-```jsx
-import WardrobeFlowDashboard from './WardrobeFlowDashboard';
+- **Bottleneck Warnings**: When a category's clean stock is below safety threshold
+- **Dead Stock Alerts**: Items not worn in 60+ days despite being clean
+- **Low Utilization**: Categories with high total but low usage
+- **Laundry Recommendations**: Based on cycle consistency
 
-function App() {
-  return <WardrobeFlowDashboard />;
-}
-```
+### Burn Down Analysis
+
+Projects clean stock levels over the next 30 days:
+
+- Uses current `cleanCount` and estimated daily consumption
+- Shows when categories will run out if no laundry is done
+- Helps plan laundry schedules proactively
+
+### Inventory Efficiency
+
+Measures how well you're utilizing your wardrobe:
+
+- **Active Items**: Recently worn (within last 60 days)
+- **Stagnant Items**: Not worn in 60+ days
+- **Utilization %**: Percentage of active items
+
+## Usage Examples
+
+### Adding a New Category
+
+1. Open **Inventory Manager** tab
+2. Tap **+** button
+3. Select emoji from grid or type your own
+4. Enter category name (auto-filled based on emoji)
+5. Set initial count (optional)
+6. Tap **Add Category**
+
+### Sending Items to Laundry
+
+1. Open **Virtual Hamper** tab
+2. Tap items to add to hamper (or use quick fill)
+3. Tap **Dispatch to Laundry** button
+4. Items move from "Dirty" to "In Laundry" state
+5. View active batches in **Analytics Lab** → **Active Cycles**
+
+### Completing Laundry
+
+1. Open **Analytics Lab** tab
+2. Switch to **Active Cycles** tab
+3. Find your batch
+4. Tap **Mark as Clean**
+5. Items return to "Clean" state automatically
 
 ## Customization
 
-### Adjusting the Health Ring
+### Adjusting Flow Score Thresholds
+
+Edit `WardrobeEngine.js` → `_calculateCleanRatioScore()`:
+
 ```javascript
-// Modify score thresholds in getRingColor()
-const getRingColor = (flowScore) => {
-  if (flowScore >= 85) return '#00E5FF'; // More strict optimal
-  if (flowScore >= 60) return '#FFAB00'; // Adjusted warning
-  return '#FF5252';
+const weights = {
+  cleanRatio: 0.35,      // Adjust weight
+  categoryBalance: 0.25,
+  bottleneckPenalty: 0.25,
+  consistencyBonus: 0.15,
 };
 ```
 
 ### Adding New Insight Types
+
+Edit `WardrobeEngine.js` → `generateInsights()`:
+
 ```javascript
 const newInsight = {
-  id: uniqueId,
+  id: uniqueId(),
   urgency: 'warning', // 'critical' | 'warning' | 'insight'
   type: 'custom_type',
   title: 'Your Title',
-  message: 'Your detailed message',
+  message: 'Your message',
+  categoryName: 'Category Name', // Optional
 };
 ```
 
-## Design Specifications
+## Data Persistence
 
-### Typography Scale
-- **Score Number**: 64px, Bold, Tabular nums, -2 letter-spacing
-- **Score Label**: 11px, Semibold, +2.5 letter-spacing, uppercase
-- **Card Title**: 16px, Bold, +0.3 letter-spacing
-- **Card Body**: 14px, Regular, +0.2 letter-spacing, 20px line-height
+All data is stored locally using AsyncStorage:
 
-### Spacing
-- Ring top margin: 40px
-- Ring to insights gap: 20px
-- Card margin bottom: 16px
-- Card padding: 16px
-- Card border-left: 4px
+- Categories and inventory counts
+- Laundry batches (active and completed)
+- Laundry history
+- Hamper contents
+- User preferences (welcome screen seen)
 
-### Colors Reference
-```javascript
-const COLORS = {
-  background: '#121212',
-  cardBackground: '#1E1E1E',
-  ringBackground: '#2A2A2A',
-  
-  // Status Colors
-  optimal: '#00E5FF',  // Cyan
-  warning: '#FFAB00',  // Amber
-  critical: '#FF5252', // Red
-  insight: '#2196F3',  // Blue
-  
-  // Text
-  primary: '#FFFFFF',
-  secondary: '#AAAAAA',
-  tertiary: '#888888',
-};
-```
+Data is automatically saved on every state change and loaded on app startup.
 
-## Performance Considerations
+## Performance Optimizations
 
-- Ring animation uses native driver where possible
-- ScrollView with `showsVerticalScrollIndicator={false}` for clean look
-- Shadow elevation optimized for mobile performance
-- Memoize insight calculations to prevent unnecessary re-renders
+- **Memoization**: Charts and analytics use `useMemo` to prevent unnecessary recalculations
+- **Refs for State**: Critical state (categories, batches) uses refs to avoid stale closures
+- **Functional Updates**: All state updates use functional form (`prev => ...`) for consistency
+- **Lazy Loading**: Charts only render when data is available
+- **Scroll Optimization**: Horizontal scroll views for long chart data
 
-## Testing Scenarios
+## Testing
 
-1. **Score = 85**: Ring should be cyan, minimal critical alerts
-2. **Score = 65**: Ring should be amber, efficiency warnings present
-3. **Score = 35**: Ring should be red, multiple critical alerts
-4. **Long insight list**: Scrolling should be smooth
-5. **Score changes**: Animation should be fluid over 1.5s
+The app has been tested for:
 
-## Next Steps
+- ✅ State synchronization across all tabs
+- ✅ Edge cases (empty states, null values, division by zero)
+- ✅ Data persistence and recovery
+- ✅ Chart updates on state changes
+- ✅ Laundry cycle tracking
+- ✅ Category management (add/remove/hibernate)
+- ✅ Hamper operations (toss, dispatch, complete)
 
-1. Connect to actual data sources (AsyncStorage or SQLite)
-2. Implement calculation engine for Flow Score
-3. Build Laundry Chute input interface
-4. Add push notifications for critical alerts
-5. Implement historical tracking and trends
-6. Add settings for customizing thresholds
+## Production Readiness
+
+The app is production-ready with:
+
+- ✅ Comprehensive error handling
+- ✅ Input validation (emoji, numbers, text)
+- ✅ Null/undefined safety checks
+- ✅ Data consistency validation
+- ✅ Orphaned data cleanup
+- ✅ Smooth animations and transitions
+- ✅ Haptic feedback for user actions
+- ✅ Responsive layouts
+
+## Future Enhancements
+
+Potential features for future versions:
+
+- Push notifications for critical alerts
+- Wear history tracking (manual logging)
+- Cost per wear analysis
+- Seasonal wardrobe suggestions
+- Export/import data functionality
+- Cloud sync across devices
+- Customizable safety thresholds
+- Multi-user support
 
 ## License
+
 MIT
 
 ## Contact
-For questions about implementation or design philosophy, refer to the Minimalist Labz design system documentation.
+
+For questions or feedback about Closetly, please refer to the project repository.
+
+---
+
+**Closetly** - Keep your wardrobe flowing smoothly. 🧺✨

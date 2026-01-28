@@ -22,7 +22,7 @@ export default function ParallaxScrollView({
 
   return (
     <ScrollView
-      style={{ backgroundColor, flex: 1 }}
+      style={{ backgroundColor: '#000000', flex: 1 }}
       scrollEventThrottle={16}>
       <View
         style={[

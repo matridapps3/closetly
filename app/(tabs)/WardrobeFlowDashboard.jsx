@@ -2,15 +2,15 @@ import { useWardrobe } from '@/contexts/WardrobeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Dimensions,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 
@@ -177,11 +177,14 @@ const WelcomeModal = ({ visible, onClose }) => {
                     <Text style={styles.guideTitle}>Use Your Virtual Hamper</Text>
                     <Text style={styles.guideDescription}>
                       When clothes get dirty, go to the <Text style={styles.highlight}>Virtual Hamper</Text> tab 
-                      and tap the "+" button on any category to toss items into your hamper. 
+                      and tap any category to toss items into your hamper. Items are automatically marked as dirty when tossed. 
                       Once you've collected enough items, tap "Send to Laundry" to create a laundry batch.
                     </Text>
                     <Text style={styles.guideTip}>
-                      💡 Tip: The app tracks which items are clean, dirty, and in laundry automatically!
+                      💡 Tip: In <Text style={styles.highlight}>Inventory Manager</Text>, you'll see three states: 
+                      <Text style={styles.highlight}> Clean</Text> (ready to wear), 
+                      <Text style={styles.highlight}> Dirty</Text> (in hamper), and 
+                      <Text style={styles.highlight}> In Laundry</Text> (being washed)!
                     </Text>
                   </View>
                 </View>
@@ -231,8 +234,8 @@ const WelcomeModal = ({ visible, onClose }) => {
                     <Text style={styles.guideTitle}>Explore Analytics & Insights</Text>
                     <Text style={styles.guideDescription}>
                       Visit the <Text style={styles.highlight}>Analytics Lab</Text> to see detailed charts, 
-                      track your laundry patterns, view burn-down projections, and get recommendations. 
-                      Use the <Text style={styles.highlight}>Explore</Text> tab to discover new features and tips.
+                      track your laundry patterns, view burn-down projections, and read smart insights tailored
+                      to your wardrobe.
                     </Text>
                     <Text style={styles.guideTip}>
                       💡 Tip: Check analytics weekly to optimize your laundry schedule and wardrobe size!
@@ -262,30 +265,29 @@ const WelcomeModal = ({ visible, onClose }) => {
 // Main Dashboard Component
 const WardrobeFlowDashboard = () => {
   // Get data from shared context
-  const { flowScore, insights, categories } = useWardrobe();
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-  const [isCheckingWelcome, setIsCheckingWelcome] = useState(true);
+  const { flowScore, insights } = useWardrobe();
+  // Start with welcome visible by default; hide it later if user has already seen it
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
 
   // Ensure we have valid values
   const displayScore = flowScore ?? 0;
   const displayInsights = insights ?? [];
 
-  // Check if welcome modal should be shown
+  // Check if welcome modal should be shown (runs once on first dashboard mount)
   useEffect(() => {
     const checkWelcomeStatus = async () => {
       try {
         const hasSeenWelcome = await AsyncStorage.getItem('@wardrobe_has_seen_welcome');
-        const shouldShow = !hasSeenWelcome && categories.length === 0;
+        const shouldShow = !hasSeenWelcome;
+        // If user has never seen it, keep it visible; otherwise hide it
         setShowWelcomeModal(shouldShow);
       } catch (error) {
         console.error('Error checking welcome status:', error);
-      } finally {
-        setIsCheckingWelcome(false);
       }
     };
 
     checkWelcomeStatus();
-  }, [categories.length]);
+  }, []);
 
   // Handle welcome modal close
   const handleCloseWelcome = async () => {
@@ -316,16 +318,14 @@ const WardrobeFlowDashboard = () => {
             ))
           ) : (
             <View style={styles.emptyInsights}>
-              <Text style={styles.emptyInsightsText}>No insights available yet</Text>
+              <Text style={styles.emptyInsightsText}>No insights available</Text>
             </View>
           )}
         </View>
       </ScrollView>
 
       {/* Welcome Modal */}
-      {!isCheckingWelcome && (
-        <WelcomeModal visible={showWelcomeModal} onClose={handleCloseWelcome} />
-      )}
+      <WelcomeModal visible={showWelcomeModal} onClose={handleCloseWelcome} />
     </View>
   );
 };
@@ -333,7 +333,7 @@ const WardrobeFlowDashboard = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#000000',
   },
   scrollView: {
     flex: 1,
@@ -421,8 +421,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyInsightsText: {
-    fontSize: 14,
-    color: '#888888',
+    fontSize: 26,
+    color:'#5FB3B3',
     textAlign: 'center',
   },
   // Welcome Modal Styles

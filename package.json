@@ -1,9 +1,9 @@
 {
-  "name": "wardrobe-flow",
+  "name": "closetly",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --lan",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
